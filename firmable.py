@@ -33,7 +33,5 @@ def get_company_info(url, linkedin=False):
 
     return extracted
 
-
-
 if __name__ == "__main__":
     print(get_company_info("https://www.labgroup.com.au/"))
