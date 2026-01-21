@@ -66,7 +66,7 @@ def parse_date(article):
         logger.warning(f"Could not parse date: '{date_str}'. Sorting to end.")
         return datetime.min
 
-def pull_news(company_name, location, timeframe):
+def pull_news_perplexity(company_name, location, timeframe):
     start_date = None 
     now = datetime.now()
 
@@ -193,7 +193,7 @@ if __name__ == "__main__":
     # ]
 
     # for name, location in companies_list:
-    #     pull_news(name, location, "year")
+    #     pull_news_perplexity(name, location, "year")
 
     # single scrape
-    pull_news("iD4me", "Melbourne", "year")
+    pull_news_perplexity("iD4me", "Melbourne", "year")
