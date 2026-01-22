@@ -184,11 +184,14 @@ def convert_relative_date_to_absolute(relative_date):
 def parse_date_for_sorting(date_str):
     """
     Parse date string in DD/MM/YYYY format for sorting.
+    Handles dates with relative time tags (e.g., '20/01/2026 - 3d').
     Returns datetime object, or datetime.min if parsing fails.
     """
     try:
-        return datetime.strptime(date_str, "%d/%m/%Y")
-    except (ValueError, TypeError):
+        # Extract just the date part before the " - " separator
+        date_part = date_str.split(' - ')[0].strip()
+        return datetime.strptime(date_part, "%d/%m/%Y")
+    except (ValueError, TypeError, IndexError):
         logger.warning(f"Could not parse date for sorting: '{date_str}'. Sorting to end.")
         return datetime.min
 

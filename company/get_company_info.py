@@ -12,4 +12,4 @@ def get_info(company_name, company_location):
     return company_info
 
 if __name__ == "__main__":
-    print(get_info("GRC Solutions", "Sydney"))
+    print(get_info("Law In Order", "Melbourne"))
