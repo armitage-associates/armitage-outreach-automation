@@ -196,7 +196,53 @@ def parse_date_for_sorting(date_str):
         return datetime.min
 
 
-def add_posts_to_news_file(news_filepath, posts_data):
+def generate_reachout_message(company_name, growth_posts):
+    """
+    Generate a short professional LinkedIn reachout message based on filtered growth posts.
+    Returns the message string, or an empty string on failure.
+    """
+    if not growth_posts:
+        return ""
+
+    posts_summary = "\n".join(
+        f"- [{p.get('growth_type', 'growth')}] {p.get('summary', '')}"
+        for p in growth_posts
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a professional business development specialist. "
+                        "Write short, warm LinkedIn reachout messages that reference "
+                        "specific company achievements. Keep it under 100 words, "
+                        "conversational, and end with a soft call-to-action."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Write a short LinkedIn reachout message to someone at {company_name}. "
+                        f"Reference these recent growth signals:\n{posts_summary}\n\n"
+                        "The message should congratulate them on their growth, briefly mention "
+                        "one or two specific achievements, and suggest a conversation. "
+                        "Do not include a subject line. Just the message body."
+                    ),
+                },
+            ],
+        )
+        message = response.choices[0].message.content.strip()
+        logger.info(f"Generated reachout message for {company_name}")
+        return message
+    except Exception as e:
+        logger.exception(f"Failed to generate reachout message: {e}")
+        return ""
+
+
+def add_posts_to_news_file(news_filepath, posts_data, message=""):
     """
     Add the analyzed posts to the news JSON file under a 'posts' field.
     """
@@ -205,8 +251,9 @@ def add_posts_to_news_file(news_filepath, posts_data):
         with open(news_filepath, 'r', encoding='utf-8') as f:
             news_data = json.load(f)
 
-        # Add posts field
+        # Add posts and message fields
         news_data['posts'] = posts_data
+        news_data['message'] = message
 
         # Write back to file
         with open(news_filepath, 'w', encoding='utf-8') as f:
@@ -288,8 +335,13 @@ def summarize_csv(news_filepath, posts_filepath):
         growth_posts.sort(key=lambda x: parse_date_for_sorting(x['date']), reverse=True)
         logger.info("Sorted posts chronologically (latest first)")
 
+        # Generate LinkedIn reachout message from growth posts
+        with open(news_filepath, 'r', encoding='utf-8') as f:
+            company_name = json.load(f).get('company', 'the company')
+        message = generate_reachout_message(company_name, growth_posts)
+
         # Add to news file
-        add_posts_to_news_file(news_filepath, growth_posts)
+        add_posts_to_news_file(news_filepath, growth_posts, message)
 
         logger.info("Processing complete!")
         return growth_posts

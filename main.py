@@ -53,4 +53,4 @@ def cleanup(input_dir: str = "data/input", output_dir: str = "data/output"):
 
 
 if __name__ == "__main__":
-    run(["mwan0165@student.monash.edu", "a0416517630@icloud.com"])
+    run(["mwan0165@student.monash.edu"])
