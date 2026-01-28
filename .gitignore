@@ -4,3 +4,4 @@ cookies.json
 data/output/*
 __pycache__/
 .github
+data/dump/*

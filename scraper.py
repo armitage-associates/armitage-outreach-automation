@@ -37,6 +37,33 @@ def ensure_posts_field(news_filepath):
         logger.warning(f"Could not ensure posts field in {news_filepath}: {e}")
         return False
 
+
+def add_linkedin_url(news_filepath, company_info):
+    """
+    Add linkedin_url field to the JSON file.
+    """
+    if not news_filepath or not os.path.exists(news_filepath):
+        return False
+
+    try:
+        with open(news_filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        linkedin_id = company_info.get('linkedin') if company_info else None
+        if linkedin_id:
+            data['linkedin_url'] = f"https://www.linkedin.com/company/{linkedin_id}/posts/"
+        else:
+            data['linkedin_url'] = None
+
+        with open(news_filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+
+        logger.info(f"Added linkedin_url to {news_filepath}")
+        return True
+    except Exception as e:
+        logger.warning(f"Could not add linkedin_url to {news_filepath}: {e}")
+        return False
+
 async def scrape(company, location):
     """
     Scrape news and LinkedIn posts for a single company.
@@ -119,9 +146,10 @@ async def scrape(company, location):
     else:
         logger.info(f"Skipping summarization for {company} - no news data available")
 
-    # Step 5: Ensure posts field exists in JSON (even if empty)
+    # Step 5: Ensure posts field exists in JSON (even if empty) and add linkedin_url
     if news_filepath:
         ensure_posts_field(news_filepath)
+        add_linkedin_url(news_filepath, company_info)
 
     # Cleanup: Delete CSV files after summarization
     try:

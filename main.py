@@ -1,11 +1,35 @@
+import asyncio
 from scraper import scrape_all_companies
+from email_client import send_all_reports, send_digest_report
 
-def run():
+
+def run(recipients: list[str] = None, send_digest: bool = True):
+    """
+    Run the full scraping and email pipeline.
+
+    Args:
+        recipients: List of email addresses to send reports to.
+                   Falls back to EMAIL_RECIPIENTS env var (comma-separated).
+        send_digest: If True, send one digest email. If False, send individual emails per company.
+    """
     # 1. get the list of companies from salesforce
+
     # 2. run scrape function to scrape all companies
+    asyncio.run(scrape_all_companies())
+
     # 3. push result json to salesforce dashboard
-    # 4. clean up docs
-    pass
+
+    # 4. send emails
+    if recipients:
+        if send_digest:
+            send_digest_report(recipients)
+        else:
+            send_all_reports(recipients)
+    else:
+        print("No recipients configured. Set EMAIL_RECIPIENTS env var or pass recipients to run().")
+
+    # 5. clean up docs
+
 
 if __name__ == "__main__":
-    run()
+    run(["mwan0165@student.monash.edu", "a0416517630@icloud.com"])

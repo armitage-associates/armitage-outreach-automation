@@ -305,6 +305,6 @@ def summarize_csv(news_filepath, posts_filepath):
 if __name__ == "__main__":
     # Example usage
     summarize_csv(
-        news_filepath="data/output/OnQ Software.json",
-        posts_filepath="data/output/OnQ Software Linkedin Posts.csv"
+        news_filepath="data/output/GRC Solutions.json",
+        posts_filepath="data/output/GRC Solutions Linkedin Posts.csv"
     )
