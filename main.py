@@ -1,7 +1,14 @@
 import asyncio
+import logging
+from pathlib import Path
 from scraper import scrape_all_companies
 from email_client import send_all_reports, send_digest_report
 
+logging.basicConfig(
+    level=logging.INFO,  
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 def run(recipients: list[str] = None, send_digest: bool = True):
     """
@@ -26,9 +33,23 @@ def run(recipients: list[str] = None, send_digest: bool = True):
         else:
             send_all_reports(recipients)
     else:
-        print("No recipients configured. Set EMAIL_RECIPIENTS env var or pass recipients to run().")
+        logger.warning("No recipients configured. Set EMAIL_RECIPIENTS env var or pass recipients to run().")
 
     # 5. clean up docs
+    # cleanup()
+
+
+def cleanup(input_dir: str = "data/input", output_dir: str = "data/output"):
+    """Delete all files from data/input and data/output directories."""
+    base = Path(__file__).parent
+    for dir_path in (base / input_dir, base / output_dir):
+        if not dir_path.exists():
+            continue
+        for file in dir_path.iterdir():
+            if file.is_file():
+                file.unlink()
+                logger.info(f"Deleted {file}")
+    logger.info("Cleanup complete")
 
 
 if __name__ == "__main__":
