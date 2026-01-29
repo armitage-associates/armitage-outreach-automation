@@ -33,7 +33,7 @@ def run(recipients: list[str] = None, send_digest: bool = True):
         else:
             send_all_reports(recipients)
     else:
-        logger.warning("No recipients configured. Set EMAIL_RECIPIENTS env var or pass recipients to run().")
+        logger.warning("No recipients configured, pass recipients to run().")
 
     # 5. clean up docs
     # cleanup()

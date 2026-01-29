@@ -2,6 +2,7 @@
 .env
 cookies.json
 data/output/*
+data/input/*
 __pycache__/
 .github
 data/dump/*
