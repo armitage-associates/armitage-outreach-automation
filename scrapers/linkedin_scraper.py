@@ -39,7 +39,7 @@ async def scrape_news_linkedin(company_info):
     project_root = os.path.dirname(script_dir)
     output_dir = os.path.join(project_root, "data", "output")
     output_file = os.path.join(output_dir, f"{company_name} Linkedin Posts.csv")
-    scroll_loops = 5
+    scroll_loops = random.randint(4, 7)
 
     try:
         success = await run(company_url, scroll_loops, output_file)
@@ -79,7 +79,12 @@ async def run(company_url, scroll_loops, output_file):
             # 2. Use existing page or create one
             page = context.pages[0] if context.pages else await context.new_page()
 
-            # 3. Navigate
+            # 3. Random delay before navigation (humans don't instantly navigate)
+            initial_delay = random.uniform(1, 3)
+            logger.debug(f"Waiting {initial_delay:.1f}s before navigating...")
+            await asyncio.sleep(initial_delay)
+
+            # 4. Navigate
             logger.info(f"Navigating to {company_url}")
             try:
                 await page.goto(company_url, timeout=60000)
@@ -123,12 +128,17 @@ async def run(company_url, scroll_loops, output_file):
                     return False
 
             # 5. Scroll Loop (Async sleep)
-            logger.info("Starting scroll loop...")
+            # Pause before scrolling (simulate reading the page)
+            read_delay = random.uniform(2, 5)
+            logger.debug(f"Reading page for {read_delay:.1f}s before scrolling...")
+            await asyncio.sleep(read_delay)
+
+            logger.info(f"Starting scroll loop ({scroll_loops} scrolls)...")
             for i in range(scroll_loops):
-                await page.mouse.wheel(0, 1500)
-                logger.debug(f"Scroll {i + 1}/{scroll_loops} completed")
-                # Use asyncio.sleep, NOT time.sleep
-                await asyncio.sleep(random.uniform(2, 4))
+                scroll_distance = random.randint(800, 1800)
+                await page.mouse.wheel(0, scroll_distance)
+                logger.debug(f"Scroll {i + 1}/{scroll_loops} ({scroll_distance}px)")
+                await asyncio.sleep(random.uniform(2, 5))
 
             # 6. Extract Data
             # wait for at least one post to ensure load
@@ -197,6 +207,9 @@ async def run(company_url, scroll_loops, output_file):
                     # Remove the slicing [:200] so you see the FULL text in your CSV
                     extracted_data.append([date, likes, text.replace('\n', ' ')])
                     logger.debug(f"Successfully parsed post {idx + 1}: date={date}, likes={likes}")
+
+                    # Small random pause between posts (humans don't process instantly)
+                    await asyncio.sleep(random.uniform(0.3, 1.0))
 
                 except Exception as e:
                     logger.warning(f"Error parsing post {idx + 1}, skipping: {e}")
