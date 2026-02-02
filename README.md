@@ -54,13 +54,12 @@ companies.csv
 │   └── firmable_data.py             # Firmable API for company enrichment
 ├── scrapers/
 │   ├── perplexity_scraper.py        # News scraping via Perplexity AI
-│   └── linkedin_scraper.py          # LinkedIn post scraping via Playwright
+│   ├── linkedin_scraper.py          # LinkedIn post scraping via Playwright
+│   └── linkedin_login.py            # Manual LinkedIn authentication
 ├── data/
 │   ├── input/companies.csv          # Target companies list
 │   └── output/                      # Generated JSON reports and CSV files
-├── cron.txt                         # Cron schedule definition
-└── .github/workflows/
-    └── weekly-scrape.yml            # GitHub Actions workflow
+└── cron.txt                         # Cron schedule definition
 ```
 
 ## Setup
@@ -69,7 +68,6 @@ companies.csv
 
 - Python 3.12+
 - Playwright browsers (`playwright install --with-deps chromium`)
-- LinkedIn session cookies exported to `cookies.json`
 
 ### Installation
 
@@ -100,6 +98,7 @@ Required environment variables:
 | `SMTP_USER` | SMTP username (email address) |
 | `SMTP_PASSWORD` | SMTP password (app password for Gmail) |
 | `SENDER_EMAIL` | Sender email (defaults to `SMTP_USER`) |
+| `ALERT_EMAIL` | Alert recipient for LinkedIn session expiry (comma-separated) |
 
 ### Input
 
@@ -127,14 +126,30 @@ This will:
 5. Analyze posts with OpenAI, filter for growth signals, and generate a reachout message
 6. Send a digest email to configured recipients
 
+### Authenticate LinkedIn
+
+Before scraping LinkedIn posts, you need to authenticate once. This opens a visible browser window for you to log in manually:
+
+```bash
+python scrapers/linkedin_login.py
+```
+
+The session is saved to `.linkedin_profile/` and reused across subsequent runs.
+
 ### Run individual components
 
 ```bash
+# Scrape all companies
+python scraper.py
+
 # Summarize LinkedIn posts for a single company
 python summarizer.py
 
 # Send digest email from existing output data
 python email_client.py recipient@example.com
+
+# Sync data to Salesforce
+python salesforce.py
 ```
 
 ## Output
@@ -167,12 +182,10 @@ Each company produces a JSON file in `data/output/` with the following structure
 
 ## Scheduling
 
-### Cron (recommended for local/server deployment)
-
 The pipeline is configured to run weekly via a system cron job. The schedule is defined in `cron.txt`:
 
 ```
-0 0 * * 0  # Every Sunday at midnight
+0 12 * * 0  # Every Sunday at noon
 ```
 
 To install the cron job:
