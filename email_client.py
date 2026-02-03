@@ -115,6 +115,20 @@ class EmailClient:
                         """
             html += "    </div>\n"
 
+        potential_actions = company_data.get("potential_actions", [])
+        if potential_actions:
+            html += """
+                        <div class="section">
+                            <h2 class="section-title">Potential Actions for Analysts</h2>
+                            <ul style="background: white; padding: 15px 15px 15px 35px; margin: 0; border-left: 4px solid #9b59b6; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    """
+            for action in potential_actions:
+                html += f'            <li style="margin: 8px 0; color: #333;">{action}</li>\n'
+            html += """
+                            </ul>
+                        </div>
+                    """
+
         message = company_data.get("message", "")
         if message:
             html += f"""
@@ -331,6 +345,22 @@ def send_digest_report(recipients: list[str], output_dir: str = "data/output") -
                                     </div>
                         """
             html += "        </div>\n"
+
+        potential_actions = company_data.get("potential_actions", [])
+        if potential_actions:
+            html += """
+                        <div class="subsection">
+                            <h3 class="subsection-title">Potential Actions for Analysts</h3>
+                            <div class="item" style="border-left-color: #9b59b6;">
+                                <ul style="margin: 0; padding-left: 20px;">
+                    """
+            for action in potential_actions:
+                html += f'                <li style="margin: 6px 0; color: #555;">{action}</li>\n'
+            html += """
+                                </ul>
+                            </div>
+                        </div>
+                    """
 
         message = company_data.get("message", "")
         if message:

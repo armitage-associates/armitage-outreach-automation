@@ -196,6 +196,106 @@ def parse_date_for_sorting(date_str):
         return datetime.min
 
 
+def generate_potential_actions(company_name, growth_posts, company_data=None):
+    """
+    Generate potential actions for investment analysts based on company growth signals.
+    Returns a list of actionable items from a private equity perspective.
+    """
+    logger.info(f"Generating potential actions for {company_name}")
+
+    if not growth_posts and not company_data:
+        logger.warning(f"No growth posts or company data for {company_name}, returning default actions")
+        return ["Schedule introductory call with founders", "Research competitive landscape"]
+
+    # Build context from growth posts
+    posts_summary = ""
+    if growth_posts:
+        posts_summary = "\n".join(
+            f"- [{p.get('growth_type', 'growth')}] {p.get('summary', '')}"
+            for p in growth_posts
+        )
+
+    # Build context from articles if available
+    articles_summary = ""
+    if company_data and company_data.get("articles"):
+        articles_summary = "\n".join(
+            f"- {a.get('headline', '')} ({a.get('growth_type', '')})"
+            for a in company_data.get("articles", [])[:5]
+        )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a relationship-focused advisor for a private equity firm. "
+                        "Generate creative, specific ways for investment analysts to build genuine "
+                        "relationships with company founders and executives. Focus on physical meetings, "
+                        "social activities, and proactive outreach - NOT research or due diligence. "
+                        "Think: coffee meetings, golf, tennis, dinners, industry events, introductions, "
+                        "sending gifts, attending their events, inviting them to exclusive gatherings."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Based on these signals about {company_name}, suggest 4-6 creative ways to "
+                        f"build a relationship with the founders/executives:\n\n"
+                        f"Recent Company Signals:\n{posts_summary}\n\n"
+                        f"News & Articles:\n{articles_summary}\n\n"
+                        "Focus on PHYSICAL and SOCIAL relationship-building activities like:\n"
+                        "- Inviting them to play golf, tennis, or other sports\n"
+                        "- Coffee or lunch meetings at specific venues\n"
+                        "- Attending or inviting them to industry events\n"
+                        "- Sending personalized gifts related to their interests\n"
+                        "- Making warm introductions to valuable contacts\n"
+                        "- Congratulating them in person on milestones\n\n"
+                        "Format as a simple numbered list. Each action should be a single clear sentence "
+                        "with specific details tailored to this company. No markdown, no bold, no sub-bullets."
+                    ),
+                },
+            ],
+        )
+        actions_text = response.choices[0].message.content.strip()
+
+        # Parse numbered list into array
+        actions = []
+        for line in actions_text.split('\n'):
+            line = line.strip()
+            # Skip empty lines and sub-bullets
+            if not line or line.startswith('-'):
+                continue
+            # Remove numbering (1., 2., etc.) and clean up
+            if line and line[0].isdigit():
+                # Remove leading number and punctuation
+                clean_line = line.lstrip('0123456789.-) ').strip()
+                # Remove markdown formatting (**, *, etc.)
+                clean_line = clean_line.replace('**', '').replace('*', '')
+                # Remove trailing colons from header-style lines
+                if clean_line.endswith(':'):
+                    continue  # Skip header-only lines
+                if clean_line and len(clean_line) > 15:
+                    actions.append(clean_line)
+            elif line and not line[0].isdigit() and len(line) > 20:
+                # Include non-numbered substantial lines, clean markdown
+                clean_line = line.replace('**', '').replace('*', '')
+                if not clean_line.endswith(':'):
+                    actions.append(clean_line)
+
+        # Ensure we have at least some actions
+        if not actions:
+            actions = [actions_text]  # Fall back to full text if parsing fails
+
+        logger.info(f"Generated {len(actions)} potential actions for {company_name}")
+        return actions
+
+    except Exception as e:
+        logger.exception(f"Failed to generate potential actions: {e}")
+        return ["Schedule introductory call with founders", "Research competitive landscape"]
+
+
 def generate_reachout_message(company_name, growth_posts):
     """
     Generate a short professional LinkedIn reachout message based on filtered growth posts.
@@ -219,20 +319,24 @@ def generate_reachout_message(company_name, growth_posts):
                 {
                     "role": "system",
                     "content": (
-                        "You are a professional business development specialist. "
-                        "Write short, warm LinkedIn reachout messages that reference "
-                        "specific company achievements. Keep it under 100 words, "
-                        "conversational, and end with a soft call-to-action."
+                        "You are a partner at a private equity firm reaching out to promising "
+                        "company founders. Write concise, professional LinkedIn messages that "
+                        "express genuine interest in their business trajectory. Keep it under "
+                        "100 words, confident but not salesy. You're a peer, not a vendor."
                     ),
                 },
                 {
                     "role": "user",
                     "content": (
-                        f"Write a short LinkedIn reachout message to someone at {company_name}. "
+                        f"Write a short LinkedIn reachout message to a founder/executive at {company_name}. "
                         f"Reference these recent growth signals:\n{posts_summary}\n\n"
-                        "The message should congratulate them on their growth, briefly mention "
-                        "one or two specific achievements, and suggest a conversation. "
-                        "Do not include a subject line. Just the message body."
+                        "The message should:\n"
+                        "- Acknowledge their recent momentum with a specific achievement\n"
+                        "- Briefly mention you're from a PE firm interested in their space\n"
+                        "- Express interest in learning more about their growth plans\n"
+                        "- Suggest a casual conversation (coffee, call) with no pressure\n"
+                        "- Sound like a peer who respects founders, not a cold pitch\n\n"
+                        "Do not include a subject line. Just the message body. No emojis."
                     ),
                 },
             ],
@@ -245,24 +349,27 @@ def generate_reachout_message(company_name, growth_posts):
         return ""
 
 
-def add_posts_to_news_file(news_filepath, posts_data, message=""):
+def add_posts_to_news_file(news_filepath, posts_data, message="", potential_actions=None):
     """
     Add the analyzed posts to the news JSON file under a 'posts' field.
+    Also adds potential_actions field (required).
     """
     try:
         # Read existing news file
         with open(news_filepath, 'r', encoding='utf-8') as f:
             news_data = json.load(f)
 
-        # Add posts and message fields
+        # Add posts, message, and potential_actions fields
         news_data['posts'] = posts_data
         news_data['message'] = message
+        # Ensure potential_actions always exists
+        news_data['potential_actions'] = potential_actions if potential_actions else []
 
         # Write back to file
         with open(news_filepath, 'w', encoding='utf-8') as f:
             json.dump(news_data, f, indent=2)
 
-        logger.info(f"Successfully added {len(posts_data)} posts to {news_filepath}")
+        logger.info(f"Successfully added {len(posts_data)} posts and {len(news_data['potential_actions'])} actions to {news_filepath}")
 
     except Exception as e:
         logger.exception(f"Failed to add posts to news file: {e}")
@@ -338,13 +445,19 @@ def summarize_csv(news_filepath, posts_filepath):
         growth_posts.sort(key=lambda x: parse_date_for_sorting(x['date']), reverse=True)
         logger.info("Sorted posts chronologically (latest first)")
 
-        # Generate LinkedIn reachout message from growth posts
+        # Load company data for generating actions and message
         with open(news_filepath, 'r', encoding='utf-8') as f:
-            company_name = json.load(f).get('company', 'the company')
+            company_data = json.load(f)
+        company_name = company_data.get('company', 'the company')
+
+        # Generate LinkedIn reachout message from growth posts
         message = generate_reachout_message(company_name, growth_posts)
 
+        # Generate potential actions for investment analysts
+        potential_actions = generate_potential_actions(company_name, growth_posts, company_data)
+
         # Add to news file
-        add_posts_to_news_file(news_filepath, growth_posts, message)
+        add_posts_to_news_file(news_filepath, growth_posts, message, potential_actions)
 
         logger.info("Processing complete!")
         return growth_posts

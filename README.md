@@ -54,8 +54,7 @@ companies.csv
 │   └── firmable_data.py             # Firmable API for company enrichment
 ├── scrapers/
 │   ├── perplexity_scraper.py        # News scraping via Perplexity AI
-│   ├── linkedin_scraper.py          # LinkedIn post scraping via Playwright
-│   └── linkedin_login.py            # Manual LinkedIn authentication
+│   └── linkedin_scraper.py          # LinkedIn post scraping via Playwright (guest access)
 ├── data/
 │   ├── input/companies.csv          # Target companies list
 │   └── output/                      # Generated JSON reports and CSV files
@@ -92,13 +91,16 @@ Required environment variables:
 | `PERPLEXITY_API_KEY` | Perplexity AI API key (sonar-pro) |
 | `FIRMABLE_API_KEY` | Firmable API key for company enrichment |
 | `SERP_API_KEY` | SerpAPI key for Google Search |
+| `SALESFORCE_DOMAIN` | Salesforce instance URL (e.g., `https://yourorg.my.salesforce.com`) |
 | `SALESFORCE_USERNAME` | Salesforce login email |
 | `SALESFORCE_PASSWORD` | Salesforce password |
 | `SALESFORCE_SECURITY_TOKEN` | Salesforce security token |
+| `CONSUMER_KEY` | Salesforce Connected App consumer key (OAuth) |
+| `CONSUMER_SECRET` | Salesforce Connected App consumer secret (OAuth) |
 | `SMTP_USER` | SMTP username (email address) |
 | `SMTP_PASSWORD` | SMTP password (app password for Gmail) |
 | `SENDER_EMAIL` | Sender email (defaults to `SMTP_USER`) |
-| `ALERT_EMAIL` | Alert recipient for LinkedIn session expiry (comma-separated) |
+| `ALERT_EMAIL` | Alert recipient for errors (comma-separated) |
 
 ### Input
 
@@ -122,19 +124,9 @@ This will:
 1. Read companies from `data/input/companies.csv`
 2. Retrieve company info (website URL, LinkedIn ID, industry)
 3. Scrape news articles via Perplexity AI
-4. Scrape LinkedIn posts via Playwright
+4. Scrape LinkedIn posts via Playwright (no login required — uses guest access with anti-detection)
 5. Analyze posts with OpenAI, filter for growth signals, and generate a reachout message
 6. Send a digest email to configured recipients
-
-### Authenticate LinkedIn
-
-Before scraping LinkedIn posts, you need to authenticate once. This opens a visible browser window for you to log in manually:
-
-```bash
-python scrapers/linkedin_login.py
-```
-
-The session is saved to `.linkedin_profile/` and reused across subsequent runs.
 
 ### Run individual components
 
