@@ -92,8 +92,6 @@ def scrape_news_linkedin(company_info):
 
         logger.info(f"Response length: {len(response_text)} characters")
         logger.info(f"Number of lines: {len(response_text.split(chr(10)))}")
-        logger.info(f"First 500 chars:\n{response_text[:500]}")
-        logger.info(f"Last 500 chars:\n{response_text[-500:]}")
 
         # Each line is a separate post object - collect them all
         posts_data = []
