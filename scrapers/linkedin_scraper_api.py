@@ -81,7 +81,7 @@ def scrape_news_linkedin(company_info):
             "https://api.brightdata.com/datasets/v3/scrape?dataset_id=gd_lyy3tktm25m4avu764&custom_output_fields=title%2Cpost_text%2Cdate_posted&notify=false&type=discover_new&discover_by=company_url",
             headers=headers,
             data=data,
-            timeout=60
+            timeout=100
         )
 
         # Check for HTTP errors

@@ -125,6 +125,7 @@ Required environment variables:
 | `SMTP_PASSWORD` | SMTP password (app password for Gmail) |
 | `SENDER_EMAIL` | Sender email (defaults to `SMTP_USER`) |
 | `EMAIL_RECIPIENTS` | Email recipients (comma-separated) |
+| `USE_PLAYWRIGHT_FALLBACK` | **Optional:** Enable Playwright browser fallback (default: `false`). Set to `true` for local testing. |
 
 ### Input
 
@@ -141,7 +142,7 @@ GRC Solutions,Sydney
 
 ### Local Execution
 
-#### Run the full pipeline
+#### Run the full pipeline (API-only mode - Default)
 
 ```bash
 python main.py
@@ -151,9 +152,21 @@ This will:
 1. Read companies from `data/input/companies.csv`
 2. Retrieve company info (website URL, LinkedIn ID, industry)
 3. Scrape news articles via Perplexity AI
-4. **Scrape LinkedIn posts via BrightData API** (falls back to Playwright if API fails)
+4. **Scrape LinkedIn posts via BrightData API only**
 5. Analyze posts with OpenAI, filter for growth signals, and generate a reachout message
 6. Send a digest email to configured recipients
+
+#### Enable Playwright fallback (Local testing only)
+
+```bash
+# One-time command with fallback enabled
+USE_PLAYWRIGHT_FALLBACK=true python main.py
+
+# Or update .env file
+# Set: USE_PLAYWRIGHT_FALLBACK=true
+```
+
+This enables browser automation as a fallback if the API fails. **Use only for local testing.**
 
 #### Run individual components
 

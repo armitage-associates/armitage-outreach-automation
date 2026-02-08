@@ -236,10 +236,7 @@ async def run(search_query, linkedin_id, scroll_loops, output_file):
                 f"locale={locale} tz={timezone}"
             )
 
-            browser = await p.chromium.launch(
-                headless=False,
-                args=["--headless=new"]
-                )
+            browser = await p.chromium.launch(headless=False)
             context = await browser.new_context(
                 user_agent=ua,
                 viewport=viewport,

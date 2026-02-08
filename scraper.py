@@ -105,7 +105,7 @@ async def scrape(company, location):
     # Step 2: Scrape news from Perplexity
     news_filepath = None
     try:
-        news_filepath = await scrape_news_perplexity(company_info, "year")
+        news_filepath = await scrape_news_perplexity(company_info, "month")
         if news_filepath:
             results['news_scrape'] = True
             logger.info(f"News scrape successful for {company}")
@@ -134,8 +134,10 @@ async def scrape(company, location):
         logger.warning(f"LinkedIn API scrape failed for {company}: {e}")
         results['errors'].append(f"LinkedIn API scrape: {e}")
 
-    # Fall back to Playwright if API failed
-    if not posts_filepath:
+    # Fall back to Playwright if API failed (only if explicitly enabled)
+    use_playwright_fallback = os.getenv('USE_PLAYWRIGHT_FALLBACK', 'false').lower() == 'true'
+
+    if not posts_filepath and use_playwright_fallback:
         try:
             logger.info(f"Falling back to Playwright scraper for {company}")
             posts_filepath = await scrape_linkedin_playwright(company_info)
@@ -149,6 +151,9 @@ async def scrape(company, location):
         except Exception as e:
             logger.exception(f"Unexpected error in LinkedIn Playwright scrape for {company}: {e}")
             results['errors'].append(f"LinkedIn Playwright scrape: {e}")
+    elif not posts_filepath and not use_playwright_fallback:
+        logger.info(f"Playwright fallback disabled. Set USE_PLAYWRIGHT_FALLBACK=true to enable.")
+        results['errors'].append("LinkedIn API scrape failed and Playwright fallback is disabled")
 
     if scraper_used:
         logger.info(f"LinkedIn scrape completed using: {scraper_used}")
