@@ -8,7 +8,7 @@ from company.get_company_info import get_info
 from scrapers.linkedin_scraper_api import scrape_news_linkedin as scrape_linkedin_api
 from scrapers.linkedin_scraper_requests import scrape_news_linkedin as scrape_linkedin_requests
 from scrapers.linkedin_scraper_playwright import scrape_news_linkedin as scrape_linkedin_playwright
-from summarizer import summarize_posts
+from summarizer import summarize_posts, generate_reachout_message, generate_potential_actions, add_posts_to_news_file
 from scrapers.perplexity_scraper import scrape_news_perplexity
 
 logging.basicConfig(
@@ -193,7 +193,20 @@ async def scrape(company, location):
             logger.exception(f"Unexpected error in summarization for {company}: {e}")
             results['errors'].append(f"Summarization: {e}")
     elif news_filepath:
-        logger.info(f"Skipping summarization for {company} - no LinkedIn posts available")
+        # No LinkedIn posts, but still generate reachout message and actions from news alone
+        logger.info(f"No LinkedIn posts for {company} - generating actions from news only")
+        try:
+            with open(news_filepath, 'r', encoding='utf-8') as f:
+                company_data = json.load(f)
+            company_name = company_data.get('company', company)
+
+            message = generate_reachout_message(company_name, [])
+            potential_actions = generate_potential_actions(company_name, [], company_data)
+            add_posts_to_news_file(news_filepath, [], message, potential_actions)
+            results['summarization'] = True
+        except Exception as e:
+            logger.warning(f"Failed to generate actions from news for {company}: {e}")
+            results['errors'].append(f"News-only actions: {e}")
     else:
         logger.info(f"Skipping summarization for {company} - no news data available")
 
