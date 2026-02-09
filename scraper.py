@@ -6,6 +6,7 @@ import os
 import random
 from company.get_company_info import get_info
 from scrapers.linkedin_scraper_api import scrape_news_linkedin as scrape_linkedin_api
+from scrapers.linkedin_scraper_requests import scrape_news_linkedin as scrape_linkedin_requests
 from scrapers.linkedin_scraper_playwright import scrape_news_linkedin as scrape_linkedin_playwright
 from summarizer import summarize_posts
 from scrapers.perplexity_scraper import scrape_news_perplexity
@@ -116,7 +117,7 @@ async def scrape(company, location):
         logger.exception(f"Unexpected error in news scrape for {company}: {e}")
         results['errors'].append(f"News scrape: {e}")
 
-    # Step 3: Scrape LinkedIn posts (try API first, fall back to Playwright)
+    # Step 3: Scrape LinkedIn posts (try API -> Requests -> Playwright)
     posts_filepath = None
     scraper_used = None
 
@@ -134,7 +135,26 @@ async def scrape(company, location):
         logger.warning(f"LinkedIn API scrape failed for {company}: {e}")
         results['errors'].append(f"LinkedIn API scrape: {e}")
 
-    # Fall back to Playwright if API failed (only if explicitly enabled)
+    # Fall back to requests-based scraper if API failed (only if explicitly enabled)
+    use_requests_fallback = os.getenv('USE_REQUESTS_FALLBACK', 'true').lower() == 'true'
+
+    if not posts_filepath and use_requests_fallback:
+        try:
+            logger.info(f"Falling back to requests-based scraper for {company}")
+            posts_filepath = scrape_linkedin_requests(company_info)
+            if posts_filepath:
+                results['linkedin_scrape'] = True
+                scraper_used = 'Requests'
+                logger.info(f"LinkedIn requests scrape successful for {company}")
+            else:
+                logger.warning(f"LinkedIn requests scrape returned no results for {company}")
+        except Exception as e:
+            logger.warning(f"LinkedIn requests scrape failed for {company}: {e}")
+            results['errors'].append(f"LinkedIn requests scrape: {e}")
+    elif not posts_filepath and not use_requests_fallback:
+        logger.info(f"Requests fallback disabled. Set USE_REQUESTS_FALLBACK=true to enable.")
+
+    # Fall back to Playwright if both API and Requests failed (only if explicitly enabled)
     use_playwright_fallback = os.getenv('USE_PLAYWRIGHT_FALLBACK', 'false').lower() == 'true'
 
     if not posts_filepath and use_playwright_fallback:
@@ -147,13 +167,14 @@ async def scrape(company, location):
                 logger.info(f"LinkedIn Playwright scrape successful for {company}")
             else:
                 logger.warning(f"LinkedIn Playwright scrape returned no results for {company}")
-                results['errors'].append("Both API and Playwright scrapers returned None")
+                results['errors'].append("All scrapers returned None")
         except Exception as e:
             logger.exception(f"Unexpected error in LinkedIn Playwright scrape for {company}: {e}")
             results['errors'].append(f"LinkedIn Playwright scrape: {e}")
     elif not posts_filepath and not use_playwright_fallback:
         logger.info(f"Playwright fallback disabled. Set USE_PLAYWRIGHT_FALLBACK=true to enable.")
-        results['errors'].append("LinkedIn API scrape failed and Playwright fallback is disabled")
+        if not scraper_used:
+            results['errors'].append("All enabled LinkedIn scrapers failed")
 
     if scraper_used:
         logger.info(f"LinkedIn scrape completed using: {scraper_used}")
