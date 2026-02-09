@@ -396,21 +396,40 @@ def generate_potential_actions(company_name, growth_posts, company_data=None):
         return ["Schedule introductory call with founders", "Research competitive landscape"]
 
 
-def generate_reachout_message(company_name, growth_posts):
+def generate_reachout_message(company_name, growth_posts, company_data=None):
     """
-    Generate a short professional LinkedIn reachout message based on filtered growth posts.
+    Generate a short professional LinkedIn reachout message from Armitage Associates.
+    Uses growth posts when available, falls back to news articles.
     Returns the message string, or an empty string on failure.
     """
     logger.info(f"Generating LinkedIn reachout message for {company_name} based on {len(growth_posts)} growth posts")
 
-    if not growth_posts:
-        logger.warning(f"No growth posts available for {company_name}, skipping reachout message")
+    # Build context from growth posts
+    posts_summary = ""
+    if growth_posts:
+        posts_summary = "\n".join(
+            f"- [{p.get('growth_type', 'growth')}] {p.get('summary', '')}"
+            for p in growth_posts
+        )
+
+    # Build context from news articles as fallback or supplement
+    articles_summary = ""
+    if company_data and company_data.get("articles"):
+        articles_summary = "\n".join(
+            f"- {a.get('headline', '')} ({a.get('growth_type', '')})"
+            for a in company_data.get("articles", [])[:5]
+        )
+
+    if not posts_summary and not articles_summary:
+        logger.warning(f"No growth posts or articles for {company_name}, skipping reachout message")
         return ""
 
-    posts_summary = "\n".join(
-        f"- [{p.get('growth_type', 'growth')}] {p.get('summary', '')}"
-        for p in growth_posts
-    )
+    # Build the signals section
+    signals = ""
+    if posts_summary:
+        signals += f"LinkedIn growth signals:\n{posts_summary}\n"
+    if articles_summary:
+        signals += f"Recent news:\n{articles_summary}\n"
 
     try:
         response = client.chat.completions.create(
@@ -419,24 +438,30 @@ def generate_reachout_message(company_name, growth_posts):
                 {
                     "role": "system",
                     "content": (
-                        "You are a partner at a private equity firm reaching out to promising "
-                        "company founders. Write concise, professional LinkedIn messages that "
-                        "express genuine interest in their business trajectory. Keep it under "
-                        "100 words, confident but not salesy. You're a peer, not a vendor."
+                        "You are writing a LinkedIn message on behalf of a partner at Armitage Associates, "
+                        "a private equity firm that backs founder-led software and technology businesses in "
+                        "Australia and New Zealand. "
+                        "Write like a real person, not a chatbot. Vary your sentence length. "
+                        "Use casual but professional language - the way a senior investor would actually "
+                        "type a LinkedIn message on their phone. Short sentences. No filler. No corporate "
+                        "buzzwords like 'synergy', 'leverage', 'ecosystem', or 'value proposition'. "
+                        "Never start with 'I hope this message finds you well' or 'I came across your company'. "
+                        "Sound like someone who genuinely follows the space and noticed something specific. "
+                        "Keep it under 80 words. No emojis. No subject line. Just the message body."
                     ),
                 },
                 {
                     "role": "user",
                     "content": (
-                        f"Write a short LinkedIn reachout message to a founder/executive at {company_name}. "
-                        f"Reference these recent growth signals:\n{posts_summary}\n\n"
-                        "The message should:\n"
-                        "- Acknowledge their recent momentum with a specific achievement\n"
-                        "- Briefly mention you're from a PE firm interested in their space\n"
-                        "- Express interest in learning more about their growth plans\n"
-                        "- Suggest a casual conversation (coffee, call) with no pressure\n"
-                        "- Sound like a peer who respects founders, not a cold pitch\n\n"
-                        "Do not include a subject line. Just the message body. No emojis."
+                        f"Write a LinkedIn message to a founder/executive at {company_name}.\n\n"
+                        f"{signals}\n"
+                        "Rules:\n"
+                        "- Open with something specific you noticed about their business - not a generic compliment\n"
+                        "- Mention Armitage Associates naturally, not as a pitch\n"
+                        "- Keep it conversational - one founder talking to another\n"
+                        "- End with a low-pressure suggestion (coffee, quick call, or grabbing a beer)\n"
+                        "- Do NOT use phrases like 'impressive growth', 'exciting trajectory', or 'caught my eye'\n"
+                        "- Write like a text you'd actually send, not a template\n"
                     ),
                 },
             ],
@@ -559,8 +584,8 @@ def summarize_posts(news_filepath, posts_filepath):
             company_data = json.load(f)
         company_name = company_data.get('company', 'the company')
 
-        # Generate LinkedIn reachout message from growth posts
-        message = generate_reachout_message(company_name, growth_posts)
+        # Generate LinkedIn reachout message from growth posts and news
+        message = generate_reachout_message(company_name, growth_posts, company_data)
 
         # Generate potential actions for investment analysts
         potential_actions = generate_potential_actions(company_name, growth_posts, company_data)

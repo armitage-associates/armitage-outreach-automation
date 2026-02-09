@@ -205,9 +205,17 @@ def load_json_files(output_dir: str = "data/output") -> list[dict]:
 
     data = []
     for json_file in json_files:
+        # Skip LinkedIn Posts files (they are intermediate files, not company reports)
+        if "Linkedin Posts" in json_file.name:
+            logger.debug(f"Skipping intermediate file: {json_file.name}")
+            continue
         try:
             with open(json_file, "r", encoding="utf-8") as f:
                 company_data = json.load(f)
+                # Validate it's a company report dict, not a posts list
+                if not isinstance(company_data, dict) or "company" not in company_data:
+                    logger.warning(f"Skipping {json_file.name}: not a valid company report")
+                    continue
                 data.append(company_data)
                 logger.debug(f"Loaded {json_file.name}")
         except json.JSONDecodeError as e:

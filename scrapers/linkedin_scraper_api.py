@@ -85,13 +85,19 @@ def scrape_news_linkedin(company_info):
         )
 
         # Check for HTTP errors
+        if not response.ok:
+            logger.error(f"API error {response.status_code}: {response.text[:500]}")
         response.raise_for_status()
+
+        # Handle async 202 response (BrightData returns snapshot_id instead of data)
+        if response.status_code == 202:
+            logger.warning(f"BrightData returned 202 (async). Snapshot queued but not yet available. Response: {response.text[:300]}")
+            return None
 
         # BrightData returns NDJSON (multiple JSON objects on separate lines)
         response_text = response.text.strip()
 
-        logger.info(f"Response length: {len(response_text)} characters")
-        logger.info(f"Number of lines: {len(response_text.split(chr(10)))}")
+        logger.info(f"Response status: {response.status_code}, length: {len(response_text)} characters, lines: {len(response_text.split(chr(10)))}")
 
         # Each line is a separate post object - collect them all
         posts_data = []

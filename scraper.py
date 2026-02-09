@@ -200,7 +200,7 @@ async def scrape(company, location):
                 company_data = json.load(f)
             company_name = company_data.get('company', company)
 
-            message = generate_reachout_message(company_name, [])
+            message = generate_reachout_message(company_name, [], company_data)
             potential_actions = generate_potential_actions(company_name, [], company_data)
             add_posts_to_news_file(news_filepath, [], message, potential_actions)
             results['summarization'] = True
@@ -215,11 +215,11 @@ async def scrape(company, location):
         ensure_posts_field(news_filepath)
         add_linkedin_url(news_filepath, company_info)
 
-    # Cleanup: Delete CSV files after summarization
+    # Cleanup: Delete LinkedIn posts file after summarization
     try:
         if posts_filepath and os.path.exists(posts_filepath):
             os.remove(posts_filepath)
-            logger.info(f"Deleted CSV file: {posts_filepath}")
+            logger.info(f"Deleted posts file: {posts_filepath}")
     except Exception as e:
         logger.warning(f"Error deleting {posts_filepath}: {e}")
 
