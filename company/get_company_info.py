@@ -49,4 +49,4 @@ def get_info(company_name, company_location):
 
 
 if __name__ == "__main__":
-    print(get_info("Smartsoft", "Adelaide"))
+    print(get_info("UrbanX", "Brisbane"))

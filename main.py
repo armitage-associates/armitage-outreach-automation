@@ -2,6 +2,7 @@ import asyncio
 import logging
 from pathlib import Path
 from scraper import scrape_all_companies
+from salesforce import import_companies_from_salesforce
 from utils.email_client import send_all_reports, send_digest_report
 
 logging.basicConfig(
@@ -20,6 +21,7 @@ def run(recipients: list[str] = None, send_digest: bool = True):
         send_digest: If True, send one digest email. If False, send individual emails per company.
     """
     # 1. get the list of companies from salesforce
+    import_companies_from_salesforce()
 
     # 2. run scrape function to scrape all companies
     asyncio.run(scrape_all_companies())
@@ -36,7 +38,7 @@ def run(recipients: list[str] = None, send_digest: bool = True):
         logger.warning("No recipients configured, pass recipients to run().")
 
     # clean up files
-    # cleanup()
+    cleanup()
 
 
 def cleanup(input_dir: str = "data/input", output_dir: str = "data/output"):

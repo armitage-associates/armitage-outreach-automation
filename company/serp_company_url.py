@@ -35,7 +35,7 @@ def get_company_url(name, location):
         "google_domain": "google.com.au",
         "hl": "en",
         "gl": "au",
-        "q": f"{name} {location}",
+        "q": f"{name} {location} Company Page",
         "api_key": API_KEY
     }
 
