@@ -442,63 +442,69 @@ def generate_potential_actions(company_name, growth_posts, company_data=None):
                 {
                     "role": "system",
                     "content": (
-                        "You are a relationship-focused advisor for a private equity firm. "
-                        "Generate creative, specific ways for investment analysts to build genuine "
-                        "relationships with company founders and executives. Focus on physical meetings, "
-                        "social activities, and proactive outreach - NOT research or due diligence. "
-                        "Think: coffee meetings, golf, tennis, dinners, industry events, introductions, "
-                        "sending gifts, attending their events, inviting them to exclusive gatherings."
+                        "You are a senior private equity origination analyst generating highly curated "
+                        "engagement actions based strictly on scraped company signals. "
+                        "Every action must reference a specific signal from the scraped data (e.g., new hire, "
+                        "funding round, award, expansion, product launch). "
+                        "Actions must create strategic or informational value — not social hospitality. "
+                        "Do NOT suggest generic networking ideas (no golf, coffee, dinners, gifts, event "
+                        "attendance unless directly relevant to a specific signal). "
+                        "Do NOT suggest mass outreach or vague 'connect to discuss'. "
+                        "Each action must demonstrate insight into the company's strategy, growth stage, "
+                        "or sector dynamics. Assume the audience is sophisticated founders or executives. "
+                        "Tone must be sharp, professional, and credible in a private equity context."
                     ),
                 },
                 {
                     "role": "user",
                     "content": (
-                        f"Based on these signals about {company_name}, suggest 4-6 creative ways to "
-                        f"build a relationship with the founders/executives:\n\n"
-                        f"Recent Company Signals:\n{posts_summary}\n\n"
+                        f"Based on these scraped signals about {company_name}, generate 5-7 specific, "
+                        f"commercially intelligent engagement actions.\n\n"
+                        f"LinkedIn Growth Signals:\n{posts_summary}\n\n"
                         f"News & Articles:\n{articles_summary}\n\n"
-                        "Focus on PHYSICAL and SOCIAL relationship-building activities like:\n"
-                        "- Inviting them to play golf, tennis, or other sports\n"
-                        "- Coffee or lunch meetings at specific venues\n"
-                        "- Attending or inviting them to industry events\n"
-                        "- Sending personalized gifts related to their interests\n"
-                        "- Making warm introductions to valuable contacts\n"
-                        "- Congratulating them in person on milestones\n\n"
-                        "Format as a simple numbered list. Each action should be a single clear sentence "
-                        "with specific details tailored to this company. No markdown, no bold, no sub-bullets."
+                        "For each action, provide:\n"
+                        "- A concise title (one line)\n"
+                        "- 2-3 sentences explaining: why this action is relevant to the specific signal, "
+                        "what value it creates, and why it is differentiated (not generic outreach)\n\n"
+                        "Format each action as:\n"
+                        "Title\n"
+                        "Explanation sentences.\n\n"
+                        "Use plain text only. No markdown, no bold, no numbering, no bullets."
                     ),
                 },
             ],
         )
         actions_text = response.choices[0].message.content.strip()
 
-        # Parse numbered list into array
+        # Parse title + explanation blocks into array
+        # Each action is a title line followed by explanation lines, separated by blank lines
         actions = []
+        current_action = []
         for line in actions_text.split('\n'):
             line = line.strip()
-            # Skip empty lines and sub-bullets
-            if not line or line.startswith('-'):
-                continue
-            # Remove numbering (1., 2., etc.) and clean up
-            if line and line[0].isdigit():
-                # Remove leading number and punctuation
-                clean_line = line.lstrip('0123456789.-) ').strip()
-                # Remove markdown formatting (**, *, etc.)
-                clean_line = clean_line.replace('**', '').replace('*', '')
-                # Remove trailing colons from header-style lines
-                if clean_line.endswith(':'):
-                    continue  # Skip header-only lines
-                if clean_line and len(clean_line) > 15:
-                    actions.append(clean_line)
-            elif line and not line[0].isdigit() and len(line) > 20:
-                # Include non-numbered substantial lines, clean markdown
-                clean_line = line.replace('**', '').replace('*', '')
-                if not clean_line.endswith(':'):
-                    actions.append(clean_line)
+            # Remove markdown formatting
+            line = line.replace('**', '').replace('*', '')
+            # Remove leading numbering (1., 2., etc.)
+            if line and line[0].isdigit() and len(line) > 3:
+                line = line.lstrip('0123456789.-) ').strip()
 
-        # Ensure we have at least some actions
+            if not line:
+                # Blank line = end of current action block
+                if current_action:
+                    actions.append('\n'.join(current_action))
+                    current_action = []
+            else:
+                current_action.append(line)
+
+        # Don't forget the last block
+        if current_action:
+            actions.append('\n'.join(current_action))
+
+        # Filter out very short entries (likely parsing artifacts)
+        actions = [a for a in actions if len(a) > 30]
+
         if not actions:
-            actions = [actions_text]  # Fall back to full text if parsing fails
+            actions = [actions_text]
 
         logger.info(f"Generated {len(actions)} potential actions for {company_name}")
         return actions
@@ -550,15 +556,17 @@ def generate_reachout_message(company_name, growth_posts, company_data=None):
                 {
                     "role": "system",
                     "content": (
-                        "You are writing a LinkedIn message on behalf of a partner at Armitage Associates, "
-                        "a private equity firm that backs founder-led software and technology businesses in "
-                        "Australia and New Zealand. "
-                        "Write like a real person, not a chatbot. Vary your sentence length. "
-                        "Use casual but professional language - the way a senior investor would actually "
-                        "type a LinkedIn message on their phone. Short sentences. No filler. No corporate "
-                        "buzzwords like 'synergy', 'leverage', 'ecosystem', or 'value proposition'. "
+                        "You are a senior partner at Armitage Associates, a private equity firm that "
+                        "backs founder-led software and technology businesses in Australia and New Zealand. "
+                        "You are writing a LinkedIn message that demonstrates genuine sector knowledge and "
+                        "references a specific, verifiable signal from the company's recent activity. "
+                        "The tone is direct, commercially sharp, and peer-level — one operator to another. "
+                        "No flattery, no filler, no corporate jargon. "
+                        "Never use phrases like 'impressive growth', 'exciting trajectory', 'caught my eye', "
+                        "'synergy', 'leverage', 'ecosystem', or 'value proposition'. "
                         "Never start with 'I hope this message finds you well' or 'I came across your company'. "
-                        "Sound like someone who genuinely follows the space and noticed something specific. "
+                        "The message must feel like it could only have been written about this specific company — "
+                        "not a template with the name swapped in. "
                         "Keep it under 80 words. No emojis. No subject line. Just the message body."
                     ),
                 },
@@ -568,12 +576,12 @@ def generate_reachout_message(company_name, growth_posts, company_data=None):
                         f"Write a LinkedIn message to a founder/executive at {company_name}.\n\n"
                         f"{signals}\n"
                         "Rules:\n"
-                        "- Open with something specific you noticed about their business - not a generic compliment\n"
-                        "- Mention Armitage Associates naturally, not as a pitch\n"
-                        "- Keep it conversational - one founder talking to another\n"
-                        "- End with a low-pressure suggestion (coffee, quick call, or grabbing a beer)\n"
-                        "- Do NOT use phrases like 'impressive growth', 'exciting trajectory', or 'caught my eye'\n"
-                        "- Write like a text you'd actually send, not a template\n"
+                        "- Lead with a specific observation that proves you've done your homework on this company\n"
+                        "- Reference a concrete signal (deal, hire, product, metric) — not a vague compliment\n"
+                        "- Mention Armitage Associates in context, not as a pitch\n"
+                        "- Show you understand their sector dynamics or growth stage\n"
+                        "- Close with a specific, low-friction next step (not 'let's connect sometime')\n"
+                        "- The reader should think 'this person actually understands my business'\n"
                     ),
                 },
             ],

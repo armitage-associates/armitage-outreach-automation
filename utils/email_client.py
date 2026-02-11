@@ -154,10 +154,15 @@ class EmailClient:
                             <h2 class="section-title">Potential Actions for Analysts</h2>
                     """
         if potential_actions:
-            html += '            <ul style="background: white; padding: 15px 15px 15px 35px; margin: 0; border-left: 4px solid #9b59b6; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">\n'
             for action in potential_actions:
-                html += f'            <li style="margin: 8px 0; color: #333;">{action}</li>\n'
-            html += '            </ul>\n'
+                lines = action.split('\n')
+                title = lines[0]
+                explanation = ' '.join(lines[1:]).strip() if len(lines) > 1 else ''
+                html += f'            <div style="background: white; padding: 12px 15px; margin: 8px 0; border-left: 4px solid #9b59b6; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">\n'
+                html += f'              <div style="font-weight: bold; color: #2c3e50; margin-bottom: 4px;">{title}</div>\n'
+                if explanation:
+                    html += f'              <div style="color: #555; font-size: 0.9em;">{explanation}</div>\n'
+                html += f'            </div>\n'
         else:
             html += '            <p style="color: #999; font-style: italic;">No actions available.</p>\n'
         html += "        </div>\n"
@@ -419,12 +424,15 @@ def _build_digest_html(companies: list[dict]) -> str:
                             <h3 class="subsection-title">Potential Actions for Analysts</h3>
                     """
         if potential_actions:
-            html += '                            <div class="item" style="border-left-color: #9b59b6;">\n'
-            html += '                                <ul style="margin: 0; padding-left: 20px;">\n'
             for action in potential_actions:
-                html += f'                <li style="margin: 6px 0; color: #555;">{action}</li>\n'
-            html += '                                </ul>\n'
-            html += '                            </div>\n'
+                lines = action.split('\n')
+                title = lines[0]
+                explanation = ' '.join(lines[1:]).strip() if len(lines) > 1 else ''
+                html += f'                <div class="item" style="border-left-color: #9b59b6;">\n'
+                html += f'                  <div style="font-weight: bold; color: #2c3e50; margin-bottom: 4px;">{title}</div>\n'
+                if explanation:
+                    html += f'                  <div style="color: #555; font-size: 0.9em;">{explanation}</div>\n'
+                html += f'                </div>\n'
         else:
             html += '                <p style="color: #999; font-style: italic;">No actions available.</p>\n'
         html += "        </div>\n"

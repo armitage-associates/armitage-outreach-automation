@@ -276,10 +276,17 @@ def _format_actions_html(data):
     """Format potential actions and outreach message as HTML."""
     html = _section_header("Potential Actions")
     if data.get("potential_actions"):
-        html += '<ol style="padding-left:20px; margin:8px 0;">'
         for action in data["potential_actions"]:
-            html += f'<li style="margin-bottom:8px;">{action}</li>'
-        html += '</ol>'
+            lines = action.split('\n')
+            title = lines[0]
+            explanation = ' '.join(lines[1:]).strip() if len(lines) > 1 else ''
+            html += (
+                f'<div style="margin-bottom:12px; padding:8px; background:#f9f9f9; border-left:3px solid #9b59b6;">'
+                f'<div style="font-weight:bold; color:#2c3e50; margin-bottom:4px;">{title}</div>'
+            )
+            if explanation:
+                html += f'<div style="color:#555; font-size:13px;">{explanation}</div>'
+            html += '</div>'
     else:
         html += '<div style="padding:8px; color:#888;"><i>No actions generated for this period.</i></div>'
 
