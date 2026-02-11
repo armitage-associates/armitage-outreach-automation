@@ -2,7 +2,7 @@ import asyncio
 import logging
 from pathlib import Path
 from scraper import scrape_all_companies
-from salesforce import import_companies_from_salesforce
+from salesforce import import_companies_from_salesforce, push_to_salesforce
 from utils.email_client import send_all_reports, send_owner_digests
 
 logging.basicConfig(
@@ -26,7 +26,8 @@ def run(recipients: list[str] = None, send_digest: bool = True):
     # 2. run scrape function to scrape all companies
     asyncio.run(scrape_all_companies())
 
-    # 3. push result json to salesforce dashboard
+    # 3. push result json to salesforce
+    push_to_salesforce()
 
     # 4. send emails — per-owner digests with fallback to recipients
     if send_digest:

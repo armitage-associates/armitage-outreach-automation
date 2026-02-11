@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import urllib.parse
+from datetime import datetime
 import requests
 from dotenv import load_dotenv
 
@@ -122,6 +123,156 @@ def write_companies_csv(companies):
         writer.writerow(["company", "location"])
         writer.writerows(companies)
     logger.info(f"Wrote {len(companies)} companies to {csv_path}")
+
+
+def sf_patch(endpoint, token, payload):
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    return requests.patch(f"{domain}/services/data/{API_VERSION}/{endpoint}", headers=headers, json=payload)
+
+
+def _get_opportunity_ids(token, company_names):
+    """Batch SOQL query to get Opportunity IDs by name."""
+    escaped = [name.replace("'", "\\'") for name in company_names]
+    names_clause = ",".join(f"'{n}'" for n in escaped)
+    soql = f"SELECT Id, Name FROM Opportunity WHERE Name IN ({names_clause})"
+    endpoint = f"query/?q={urllib.parse.quote(soql)}"
+
+    name_to_id = {}
+    try:
+        result = sf_get(endpoint, token)
+        for record in result.get("records", []):
+            name_to_id[record["Name"]] = record["Id"]
+    except Exception as e:
+        logger.error(f"Failed to query Opportunity IDs: {e}")
+
+    return name_to_id
+
+
+def _section_header(title):
+    return (
+        f'<div style="margin-top:16px; margin-bottom:8px;">'
+        f'<b style="font-size:15px; color:#333;">{title}</b>'
+        f'</div><hr style="border:none; border-top:1px solid #ccc; margin:0 0 10px 0;"/>'
+    )
+
+
+def _last_updated_banner():
+    now = datetime.now().strftime("%d %b %Y, %I:%M %p")
+    return (
+        f'<div style="text-align:right; color:#999; font-size:11px; margin-bottom:8px;">'
+        f'Last updated: {now}'
+        f'</div>'
+    )
+
+
+def _format_news_html(data):
+    """Format articles and LinkedIn posts as HTML."""
+    html = _last_updated_banner()
+    html += _section_header("Articles")
+    if data.get("articles"):
+        for i, article in enumerate(data["articles"]):
+            html += (
+                f'<div style="margin-bottom:12px; padding:8px; background:#f9f9f9; border-left:3px solid #4a90d9;">'
+                f'<b>{article["headline"]}</b><br/>'
+                f'<span style="color:#666; font-size:12px;">{article.get("date", "")} &bull; {article.get("growth_type", "")}</span><br/>'
+                f'<span>{article["summary"]}</span><br/>'
+            )
+            if article.get("source_url"):
+                html += f'<a href="{article["source_url"]}" style="color:#4a90d9;">View source</a>'
+            html += '</div>'
+    else:
+        html += '<div style="padding:8px; color:#888;"><i>No articles found for this period.</i></div>'
+
+    html += _section_header("LinkedIn Posts")
+    if data.get("posts"):
+        for post in data["posts"]:
+            html += (
+                f'<div style="margin-bottom:12px; padding:8px; background:#f9f9f9; border-left:3px solid #0a66c2;">'
+                f'<b>{post.get("growth_type", "")}</b>'
+                f'<span style="color:#666; font-size:12px;"> &bull; {post.get("date", "")}</span><br/>'
+                f'<span>{post["summary"]}</span>'
+                f'</div>'
+            )
+    else:
+        html += '<div style="padding:8px; color:#888;"><i>No LinkedIn posts found for this period.</i></div>'
+
+    return html
+
+
+def _format_actions_html(data):
+    """Format potential actions and outreach message as HTML."""
+    html = _section_header("Potential Actions")
+    if data.get("potential_actions"):
+        html += '<ol style="padding-left:20px; margin:8px 0;">'
+        for action in data["potential_actions"]:
+            html += f'<li style="margin-bottom:8px;">{action}</li>'
+        html += '</ol>'
+    else:
+        html += '<div style="padding:8px; color:#888;"><i>No actions generated for this period.</i></div>'
+
+    html += _section_header("Outreach Message")
+    if data.get("message"):
+        html += (
+            f'<div style="padding:10px; background:#f9f9f9; border-left:3px solid #5cb85c; white-space:pre-wrap;">'
+            f'{data["message"]}'
+            f'</div>'
+        )
+    else:
+        html += '<div style="padding:8px; color:#888;"><i>No outreach message generated for this period.</i></div>'
+
+    return html
+
+
+def push_to_salesforce(output_dir=None):
+    """Push all scraped company data to Salesforce Opportunity fields."""
+    if output_dir is None:
+        output_dir = os.path.join(os.path.dirname(__file__), "data", "output")
+
+    logger.info("Starting Salesforce push")
+    token = get_access_token()
+
+    # Load all output JSON files
+    json_files = [f for f in os.listdir(output_dir) if f.endswith(".json")]
+    if not json_files:
+        logger.warning("No JSON files found in output directory")
+        return
+
+    company_data = {}
+    for filename in json_files:
+        with open(os.path.join(output_dir, filename)) as f:
+            data = json.load(f)
+        if isinstance(data, dict) and "company" in data:
+            company_data[data["company"]] = data
+
+    logger.info(f"Loaded {len(company_data)} company reports")
+
+    # Get Opportunity IDs for all companies
+    name_to_id = _get_opportunity_ids(token, list(company_data.keys()))
+    logger.info(f"Matched {len(name_to_id)} companies to Opportunities")
+
+    updated = 0
+    failed = 0
+    for company_name, data in company_data.items():
+        opp_id = name_to_id.get(company_name)
+        if not opp_id:
+            logger.warning(f"No Opportunity found for: {company_name}")
+            failed += 1
+            continue
+
+        payload = {
+            "Growth_News__c": _format_news_html(data),
+            "Growth_Actions__c": _format_actions_html(data),
+        }
+
+        resp = sf_patch(f"sobjects/Opportunity/{opp_id}", token, payload)
+        if resp.status_code == 204:
+            logger.info(f"Updated: {company_name}")
+            updated += 1
+        else:
+            logger.error(f"Failed to update {company_name}: {resp.status_code} {resp.text}")
+            failed += 1
+
+    logger.info(f"Push complete: {updated} updated, {failed} failed")
 
 
 def import_companies_from_salesforce():
