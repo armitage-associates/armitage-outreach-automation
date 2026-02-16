@@ -171,7 +171,7 @@ async def scrape(company, location):
         results['errors'].append(f"LinkedIn API scrape: {e}")
 
     # Fall back to requests-based scraper if API failed (only if explicitly enabled)
-    use_requests_fallback = os.getenv('USE_REQUESTS_FALLBACK', 'true').lower() == 'true'
+    use_requests_fallback = os.getenv('USE_REQUESTS_FALLBACK', 'false').lower() == 'true'
 
     if not posts_filepath and use_requests_fallback:
         try:
