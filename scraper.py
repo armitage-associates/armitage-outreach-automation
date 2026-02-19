@@ -379,7 +379,7 @@ async def scrape_companies(companies_list, inter_delay=True):
 
         # Inter-company delay (skip after last company)
         if inter_delay and idx < len(companies_list) - 1:
-            delay = 120
+            delay = 60
             logger.info(f"Waiting {delay // 60}m {delay % 60}s before next company...")
             await asyncio.sleep(delay)
 

@@ -1,11 +1,11 @@
 name: Run Main Script
 
 on:
-  push:
+  # push:
 
   # Run at 00:00 UTC on the 25th of every month
-  # schedule:
-  #   - cron: '0 0 25 * *'
+  schedule:
+    - cron: '0 0 25 * *'
 
   # Allow manual trigger
   workflow_dispatch:
@@ -35,7 +35,6 @@ env:
   SMTP_USER: ${{ secrets.SMTP_USER }}
   SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
   SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
-  EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
 
 jobs:
   # ── Single-company test (only when TEST_COMPANY is set) ──────────────────
