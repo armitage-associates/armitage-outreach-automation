@@ -704,11 +704,15 @@ def summarize_posts(news_filepath, posts_filepath):
             company_data = json.load(f)
         company_name = company_data.get('company', 'the company')
 
-        # Generate LinkedIn reachout message from growth posts and news
-        message = generate_reachout_message(company_name, growth_posts, company_data)
-
-        # Generate potential actions for investment analysts
-        potential_actions = generate_potential_actions(company_name, growth_posts, company_data)
+        # Only generate actions and reachout message if there's actual data
+        articles = company_data.get('articles', [])
+        message = ""
+        potential_actions = []
+        if growth_posts or articles:
+            message = generate_reachout_message(company_name, growth_posts, company_data)
+            potential_actions = generate_potential_actions(company_name, growth_posts, company_data)
+        else:
+            logger.info(f"No growth posts or articles for {company_name}, skipping action/message generation")
 
         # Add to news file
         add_posts_to_news_file(news_filepath, growth_posts, message, potential_actions)
