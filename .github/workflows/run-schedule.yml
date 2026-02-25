@@ -5,7 +5,7 @@ on:
 
   # Run at 00:00 UTC on the 25th of every month
   schedule:
-    - cron: '0 0 25 * *'
+    - cron: '0 0 24 * *'
 
   # Allow manual trigger
   workflow_dispatch:
@@ -296,7 +296,7 @@ jobs:
 
     - name: Deliver (push + email)
       if: env.SKIP_DELIVER != 'true'
-      run: python main.py --deliver-only
+      run: python main.py --deliver-only --no-email
 
     - name: Upload final results
       uses: actions/upload-artifact@v4
