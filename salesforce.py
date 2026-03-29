@@ -43,7 +43,7 @@ def extract_companies(token, dashboard_id):
     companies = []
 
     for comp in components:
-        if "reportResult" not in comp:
+        if "reportResult" not in comp or comp["reportResult"] is None:
             continue
         report = comp["reportResult"]
         metadata = report.get("reportMetadata", {})

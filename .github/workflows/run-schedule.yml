@@ -1,7 +1,7 @@
 name: Run Main Script
 
 on:
-  # push:
+  push:
 
   # Run at 00:00 UTC on the 25th of every month
   schedule:
