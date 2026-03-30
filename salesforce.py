@@ -173,17 +173,22 @@ def sf_patch(endpoint, token, payload):
 
 
 def _get_opportunity_ids(token, company_names):
-    """Batch SOQL query to get Opportunity IDs by name."""
+    """Batch SOQL query to get Opportunity IDs by name (case-insensitive)."""
     escaped = [name.replace("'", "\\'") for name in company_names]
     names_clause = ",".join(f"'{n}'" for n in escaped)
     soql = f"SELECT Id, Name FROM Opportunity WHERE Name IN ({names_clause})"
     endpoint = f"query/?q={urllib.parse.quote(soql)}"
 
+    # Build a lowercase lookup so callers match regardless of case
+    lower_to_original = {name.lower(): name for name in company_names}
     name_to_id = {}
     try:
         result = sf_get(endpoint, token)
         for record in result.get("records", []):
-            name_to_id[record["Name"]] = record["Id"]
+            sf_name = record["Name"]
+            # Map back to the caller's original casing
+            original = lower_to_original.get(sf_name.lower(), sf_name)
+            name_to_id[original] = record["Id"]
     except Exception as e:
         logger.error(f"Failed to query Opportunity IDs: {e}")
 

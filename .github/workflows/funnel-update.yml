@@ -1,0 +1,30 @@
+name: Update Funnel Metrics
+
+on:
+  # Run daily at 00:00 UTC
+  schedule:
+    - cron: '0 0 * * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+env:
+  SALESFORCE_DOMAIN: ${{ secrets.SALESFORCE_DOMAIN }}
+  CONSUMER_KEY: ${{ secrets.CONSUMER_KEY }}
+  CONSUMER_SECRET: ${{ secrets.CONSUMER_SECRET }}
+
+jobs:
+  update-funnel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: pip install requests python-dotenv
+
+    - name: Update funnel metrics
+      run: python salesforce/sf_funnel_update.py
