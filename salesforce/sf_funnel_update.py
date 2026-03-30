@@ -1,8 +1,8 @@
 """Compute origination pipeline funnel metrics and upsert to Funnel_Metric__c.
 
 Replicates the Excel funnel logic:
-  - Dead deals: uses fid48__c ("Status reached for dead deals") to know how far they got
-  - Complete deals: StageName = "0. Complete" with no fid48__c
+  - Dead deals: uses fid48__c ("Status reached for dead deals") for killed/GOWT deals only
+  - Complete deals: ALL with StageName = "0. Complete"
   - Cumulative waterfall: each stage = total minus deals that exited before reaching it
 
 Run daily via GitHub Actions to keep the Salesforce dashboard chart up to date.
@@ -74,11 +74,16 @@ FUNNEL_STAGES = [
 
 
 def get_dead_deal_counts(token):
-    """Count dead deals by fid48__c (status reached for dead deals)."""
+    """Count dead deals by fid48__c (status reached for dead deals).
+
+    Only counts deals with StageName = '7. Killed' or '8. Good opportunity wrong timing',
+    matching the Excel logic which filters PivotTable2 to dead deal stages only.
+    """
     soql = (
         "SELECT fid48__c, COUNT(Id) cnt "
         "FROM Opportunity "
         "WHERE fid48__c != null "
+        "AND StageName IN ('7. Killed', '8. Good opportunity wrong timing') "
         "GROUP BY fid48__c"
     )
     endpoint = f"query/?q={urllib.parse.quote(soql)}"
@@ -92,11 +97,14 @@ def get_dead_deal_counts(token):
 
 
 def get_complete_count(token):
-    """Count completed deals (StageName = '0. Complete' with no dead-deal status)."""
+    """Count ALL completed deals (StageName = '0. Complete').
+
+    Matches the Excel logic which counts all 0. Complete deals regardless of fid48__c.
+    """
     soql = (
         "SELECT COUNT(Id) cnt "
         "FROM Opportunity "
-        "WHERE StageName = '0. Complete' AND fid48__c = null"
+        "WHERE StageName = '0. Complete'"
     )
     endpoint = f"query/?q={urllib.parse.quote(soql)}"
     result = sf_get(endpoint, token)
