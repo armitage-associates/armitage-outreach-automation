@@ -133,26 +133,36 @@ if __name__ == "__main__":
     opps = get_opps_with_primary_contact(token)
     print(f"Found {len(opps)} Opportunities with primary contacts needing LinkedIn URLs.\n")
 
-    # Step 3: Search for LinkedIn URLs via SERP API
-    print("=== Step 3: Search for LinkedIn URLs ===")
-    updates = []
+    # Step 3: Search for LinkedIn URLs and push in batches of 50
+    print("=== Step 3: Search for LinkedIn URLs (pushing every 50) ===")
+    pending = []
     not_found = 0
+    total_updated = 0
+    total_failed = 0
+
     for i, opp in enumerate(opps):
         linkedin_url = get_contact_linkedin_url(opp["contact_name"], opp["opp_name"])
         if linkedin_url:
-            updates.append({"opp_id": opp["opp_id"], "url": linkedin_url})
+            pending.append({"opp_id": opp["opp_id"], "url": linkedin_url})
         else:
             not_found += 1
 
+        # Push every 50 found URLs
+        if len(pending) >= 50:
+            token = get_access_token()  # refresh token
+            updated, failed = batch_update_linkedin(token, pending)
+            total_updated += updated
+            total_failed += failed
+            pending = []
+
         if (i + 1) % 50 == 0:
-            print(f"  Searched {i + 1}/{len(opps)} — found: {len(updates)}, not found: {not_found}")
+            print(f"  Searched {i + 1}/{len(opps)} — updated: {total_updated}, not found: {not_found}")
 
-    print(f"\nSearch complete: {len(updates)} found, {not_found} not found.\n")
+    # Push any remaining
+    if pending:
+        token = get_access_token()
+        updated, failed = batch_update_linkedin(token, pending)
+        total_updated += updated
+        total_failed += failed
 
-    # Step 4: Batch update Salesforce
-    if updates:
-        print("=== Step 4: Update Salesforce ===")
-        updated, failed = batch_update_linkedin(token, updates)
-        print(f"\nDone: {updated} updated, {failed} failed, {not_found} no LinkedIn URL found.")
-    else:
-        print("No LinkedIn URLs found to update.")
+    print(f"\nDone: {total_updated} updated, {total_failed} failed, {not_found} no LinkedIn URL found.")
