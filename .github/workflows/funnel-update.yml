@@ -1,4 +1,4 @@
-name: Update Funnel Metrics
+name: Daily Salesforce Updates
 
 on:
   # Run daily at 00:00 UTC
@@ -14,7 +14,7 @@ env:
   CONSUMER_SECRET: ${{ secrets.CONSUMER_SECRET }}
 
 jobs:
-  update-funnel:
+  daily-update:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -28,3 +28,6 @@ jobs:
 
     - name: Update funnel metrics
       run: python salesforce/sf_funnel_update.py
+
+    - name: Roll pie chart report date ranges
+      run: python salesforce/sf_update_report_dates.py
