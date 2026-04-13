@@ -164,3 +164,78 @@ Located in `salesforce/`:
 - `data/piechart_metrics.xlsx` — source of truth for the 4 pie charts (Pivot sheet has the breakdowns; Deal list export has ~7375 rows)
 
 Both Excel files were frozen snapshots. Numbers in our live dashboards will drift as Salesforce data changes, but the **logic** matches exactly.
+
+## Opportunity dedup export
+
+Used to send our existing Salesforce opportunities to an external research/enrichment software (Tecala) so they can dedupe their results against our existing pipeline.
+
+### Script
+
+`salesforce/export_opportunities_for_dedup.py` — exports all 7,515+ opportunities to `data/opportunities_for_dedup.csv` with identifier fields used for matching.
+
+Run with: `python salesforce/export_opportunities_for_dedup.py`
+
+### Current export columns
+
+| CSV column | SF source | Population |
+|---|---|---|
+| `company_name` | `Name` | 100% |
+| `website` | `Company_Website__c` | 94% |
+| `address` | `fid5__c` | 100% (city/state granularity, not full street) |
+| `industry` | `fid8__c` | 100% |
+| `end_market` | `fid9__c` | 99% |
+| `contact_linkedin` | `Contact_LinkedIn__c` | 71% |
+| `primary_contact_name` | via `OpportunityContactRoles WHERE IsPrimary = true` subquery | ~76% |
+
+### Fields the user explicitly excluded from the export
+
+- **Opportunity ID** — round-trip identifier; user didn't want it
+- **Employee count** (`fid50__c`, 60% pop)
+- **Revenue estimate** (`fid14__c`, 82% pop)
+
+If the dedup workflow ever needs more matching signal, these are the obvious additions.
+
+### External tool reference: Tecala fields
+
+Tecala's enrichment output (see `data/tecala_sample.csv`) includes these columns; we do NOT have SF equivalents for the ones marked ✗:
+
+- name ✓ (`Name`)
+- description, productsSummary ✗ (we have `Description`, `Company__c` but partially populated)
+- domain ✓ (derive from website)
+- website ✓ (`Company_Website__c`)
+- abn ✗ — **no ABN field on Opportunity. Strongest unique identifier we're missing.** If we ever want to track ABN for dedup, would need a new custom field.
+- addressFull/Street/Suburb/State/Postcode/Country ✗ — our `fid5__c` is one string at city/state level; theirs is fully structured
+- employeeCount ✓ (`fid50__c`)
+- revenue ✓ (`fid14__c`)
+- entityType, ownershipStructure, yearsInOperation, primaryServices, certifications ✗
+- parentCompany ✓-ish (`fid40__c` Bolt-on for)
+- targetMarket ✓ (`fid9__c` End market reference)
+- primaryContactName/Title/Email/Phone/LinkedIn — partial via Contact relationship
+- secondaryContact* ✗ — SF only tracks one primary contact per opp
+- firstSeenAt ✓ (`CreatedDate`)
+- lastEnrichedAt ✓ (`LastModifiedDate`)
+
+### Useful Opportunity field reference (for future dedup or matching work)
+
+Beyond the fields documented in the Origination Charts section, here are other identifier-relevant fields with their population rates as of April 2026:
+
+| Field | Label | Population |
+|---|---|---|
+| `Name` | Company Name | 100% |
+| `Company_Website__c` (URL) | Company Website | 94.2% |
+| `fid5__c` | Address (single string) | 100% |
+| `fid8__c` | Industry (picklist) | 100% |
+| `fid9__c` | End market reference | 99.3% |
+| `fid14__c` | Revenue estimate | 82.1% |
+| `fid50__c` | Employees | 59.8% |
+| `Contact_LinkedIn__c` (URL) | Contact LinkedIn | 71.0% |
+| `ContactId` (reference to Contact) | Contact link | 76.0% |
+| `fid6__c` (reference to Contact) | Primary Contact | 50.7% |
+| `AccountId` (reference to Account) | Account link | 100% |
+| `fid4__c` | Account Name (denormalized) | 25.7% |
+| `Description` (textarea) | Description | partial |
+| `Company__c` (textarea) | Company Overview | 22.7% |
+| `Business_Industry_Overview__c` (textarea) | Business/Industry Overview | partial |
+| `fid15__c` | EBITDA estimate | 22.4% |
+
+The Account object has standard fields (`Website`, `BillingAddress`, `Phone`, `Industry`, `Description`) but in this org most are empty — Opportunity has the better signal for company identification.
