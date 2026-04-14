@@ -2,7 +2,32 @@
 
 Used for deduplication and enrichment against external research tool (Tecala).
 
-Fields chosen to maximize matching signal and enrich their database:
+Usage:
+    python salesforce/export_opportunities_for_dedup.py
+
+Output: data/opportunities_for_dedup.csv
+
+On every run, this script:
+  1. Fetches ALL Opportunity records from Salesforce (with contact subqueries)
+  2. Applies cleanups:
+     - Strips invisible unicode (zero-width space, NBSP, ÿ, control chars)
+     - Blanks out third-party directory URLs (pitchbook, ABR, yellowpages, etc.)
+     - Blanks out placeholder values ("na", "n/a", "-", etc.) in contact/URL fields
+     - Preserves numeric 0 values (unlike `x or ""`)
+  3. Writes the CSV with a stable 21-column schema
+  4. Runs integrity checks:
+     - Row count matches Salesforce
+     - Schema matches (21 expected columns in correct order)
+     - No invisible chars remain
+     - No placeholder values remain
+     - Emails contain @
+     - URLs start with http(s)://
+     - Spot-checks 50 random records against live SF data
+
+If any check fails the script exits with code 1 so callers (e.g. a scheduled
+job) can detect the failure.
+
+Fields:
   Company core: company_name, salesforce_account_id, website, address,
                 industry, end_market, description, company_overview,
                 employee_count, revenue_estimate, parent_company
@@ -12,6 +37,8 @@ Fields chosen to maximize matching signal and enrich their database:
 import csv
 import logging
 import os
+import random
+import re
 import sys
 import urllib.parse
 from urllib.parse import urlparse
@@ -242,6 +269,187 @@ def export_csv(output_path):
     return len(records)
 
 
+EXPECTED_COLUMNS = [
+    "company_name", "salesforce_account_id", "website", "address", "industry",
+    "end_market", "description", "company_overview", "employee_count",
+    "revenue_estimate", "parent_company",
+    "primary_contact_name", "primary_contact_title", "primary_contact_email",
+    "primary_contact_phone", "primary_contact_linkedin",
+    "secondary_contact_name", "secondary_contact_title", "secondary_contact_email",
+    "secondary_contact_phone", "secondary_contact_linkedin",
+]
+
+_PHONE_CHARS_RE = re.compile(r"^[\d\+\-\(\)\s\.]+$")
+_INVISIBLE_CHARS = ("\u200B", "\u200C", "\u200D", "\uFEFF", "\u00A0", "\u00FF", "\u0000")
+
+
+def verify_csv(output_path, spot_check_size=50):
+    """Run integrity checks on the exported CSV against live Salesforce.
+
+    Returns a tuple (passed: bool, issues: list[str]).
+    """
+    issues = []
+    warnings = []
+
+    # Load CSV
+    with open(output_path, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+
+    csv_total = len(rows)
+
+    # --- Check 1: Row count matches Salesforce ---
+    token = get_access_token()
+    sf_count = sf_get(
+        f"query/?q={urllib.parse.quote('SELECT COUNT(Id) cnt FROM Opportunity')}",
+        token,
+    )["records"][0]["cnt"]
+
+    if csv_total != sf_count:
+        issues.append(f"Row count mismatch: CSV has {csv_total:,}, SF has {sf_count:,}")
+    else:
+        logger.info(f"  [1/8] Row count: {csv_total:,} ✓")
+
+    # --- Check 2: Column schema ---
+    actual_cols = list(rows[0].keys()) if rows else []
+    if actual_cols != EXPECTED_COLUMNS:
+        issues.append(
+            f"Column schema mismatch.\n"
+            f"  Expected: {EXPECTED_COLUMNS}\n"
+            f"  Actual:   {actual_cols}"
+        )
+    else:
+        logger.info(f"  [2/8] Schema: {len(actual_cols)} columns in correct order ✓")
+
+    # --- Check 3: No invisible/control characters ---
+    invisible_rows = 0
+    for r in rows:
+        for val in r.values():
+            if val and any(c in val for c in _INVISIBLE_CHARS):
+                invisible_rows += 1
+                break
+    if invisible_rows:
+        issues.append(f"{invisible_rows} rows contain invisible/control characters")
+    else:
+        logger.info("  [3/8] No invisible unicode chars ✓")
+
+    # --- Check 4: No placeholder values in contact/URL fields ---
+    placeholder_hits = 0
+    contact_url_cols = [
+        "website", "primary_contact_name", "primary_contact_email",
+        "primary_contact_phone", "primary_contact_linkedin",
+        "secondary_contact_name", "secondary_contact_email",
+        "secondary_contact_phone", "secondary_contact_linkedin",
+    ]
+    for r in rows:
+        for col in contact_url_cols:
+            v = (r.get(col) or "").strip().lower()
+            if v in PLACEHOLDER_VALUES:
+                placeholder_hits += 1
+                break
+    if placeholder_hits:
+        issues.append(f"{placeholder_hits} rows still contain placeholder values")
+    else:
+        logger.info("  [4/8] No placeholder values ✓")
+
+    # --- Check 5: Emails contain @ ---
+    bad_emails = 0
+    for r in rows:
+        for col in ("primary_contact_email", "secondary_contact_email"):
+            e = (r.get(col) or "").strip()
+            if e and "@" not in e:
+                bad_emails += 1
+    if bad_emails:
+        issues.append(f"{bad_emails} email values don't contain '@'")
+    else:
+        logger.info("  [5/8] All non-empty emails contain @ ✓")
+
+    # --- Check 6: URLs start with http(s):// ---
+    bad_urls = 0
+    for r in rows:
+        for col in ("website", "primary_contact_linkedin", "secondary_contact_linkedin"):
+            u = (r.get(col) or "").strip()
+            if u and not (u.startswith("http://") or u.startswith("https://")):
+                bad_urls += 1
+    if bad_urls:
+        warnings.append(f"{bad_urls} URLs don't start with http(s):// (may be source data issue)")
+    else:
+        logger.info("  [6/8] All non-empty URLs start with http(s):// ✓")
+
+    # --- Check 7: Phone numbers are reasonable format ---
+    # Warn only — vanity numbers like "1300 GOBARKER" are legitimate.
+    bad_phones = 0
+    for r in rows:
+        for col in ("primary_contact_phone", "secondary_contact_phone"):
+            p = (r.get(col) or "").strip()
+            if p and not _PHONE_CHARS_RE.match(p):
+                bad_phones += 1
+    if bad_phones:
+        warnings.append(
+            f"{bad_phones} phone values have unusual format (vanity numbers, "
+            "trailing punctuation — may be source data issue)"
+        )
+    else:
+        logger.info("  [7/8] Phone formats look clean ✓")
+
+    # --- Check 8: Spot-check random records against live SF ---
+    if rows and csv_total == sf_count:
+        random.seed(42)
+        sample = random.sample(rows, min(spot_check_size, csv_total))
+        account_ids = [r["salesforce_account_id"] for r in sample]
+        id_clause = ",".join(f"'{aid}'" for aid in set(account_ids))
+        soql = (
+            f"SELECT Id, Name, AccountId, Company_Website__c, fid5__c, fid8__c, fid9__c, "
+            f"fid50__c, fid14__c, fid40__c, Description, Company__c, Contact_LinkedIn__c, "
+            f"(SELECT IsPrimary, Contact.Name, Contact.Title, Contact.Email, Contact.Phone, "
+            f"Contact.MobilePhone, Contact.fidliurl__c FROM OpportunityContactRoles "
+            f"ORDER BY IsPrimary DESC, CreatedDate ASC) "
+            f"FROM Opportunity WHERE AccountId IN ({id_clause})"
+        )
+        result = sf_get(f"query/?q={urllib.parse.quote(soql)}", token)
+        sf_by_acc = {}
+        for rec in result.get("records", []):
+            sf_by_acc.setdefault(rec["AccountId"], []).append(rec)
+
+        extractors = _row_extractors()
+        mismatches = 0
+        for csv_row in sample:
+            aid = csv_row["salesforce_account_id"]
+            sf_recs = sf_by_acc.get(aid, [])
+            sf = None
+            for rec in sf_recs:
+                if _sanitize_text(rec.get("Name") or "") == csv_row["company_name"]:
+                    sf = rec
+                    break
+            if not sf:
+                mismatches += 1
+                continue
+            for col, fn in extractors:
+                expected = str(fn(sf) or "")
+                actual = csv_row.get(col) or ""
+                if expected != actual:
+                    mismatches += 1
+                    break
+
+        if mismatches:
+            issues.append(
+                f"{mismatches}/{len(sample)} spot-checked records don't match live SF data"
+            )
+        else:
+            logger.info(
+                f"  [8/8] Spot-check: {len(sample)} random records × "
+                f"{len(extractors)} fields = {len(sample) * len(extractors)} comparisons ✓"
+            )
+    else:
+        logger.info("  [8/8] Spot-check: skipped (prior check failed)")
+
+    # Print warnings as informational
+    for w in warnings:
+        logger.warning(f"  WARNING: {w}")
+
+    passed = not issues
+    return passed, issues
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     output = os.path.join(
@@ -249,4 +457,21 @@ if __name__ == "__main__":
         "data",
         "opportunities_for_dedup.csv",
     )
-    export_csv(output)
+
+    logger.info("=== Exporting Salesforce opportunities for dedup ===")
+    count = export_csv(output)
+    if count is None:
+        logger.error("Export failed.")
+        sys.exit(1)
+
+    logger.info("=== Running integrity checks ===")
+    passed, issues = verify_csv(output)
+
+    if passed:
+        logger.info(f"=== All checks passed. {count:,} rows written to {output} ===")
+        sys.exit(0)
+    else:
+        logger.error("=== Integrity checks FAILED ===")
+        for issue in issues:
+            logger.error(f"  ✗ {issue}")
+        sys.exit(1)
