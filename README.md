@@ -132,9 +132,9 @@ The system identifies these growth indicators:
 ├── scraper.py                            # Per-company scrape orchestration
 ├── salesforce.py                         # Salesforce import + push
 ├── company/
-│   ├── get_company_info.py               # Aggregates SerpAPI + Firmable data
-│   ├── serp_company_url.py               # Google Search for company website
-│   ├── serp_contact_url.py              # Google Search for contact LinkedIn URL
+│   ├── get_company_info.py               # Aggregates SERP + Firmable data
+│   ├── serp_company_url.py               # Google Search via BrightData SERP API
+│   ├── serp_contact_url.py              # Contact LinkedIn search via BrightData SERP API
 │   └── firmable_data.py                  # Firmable API enrichment
 ├── scrapers/
 │   ├── perplexity_scraper.py             # News scraping (Perplexity AI)
@@ -145,12 +145,20 @@ The system identifies these growth indicators:
 ├── utils/
 │   ├── summarizer.py                     # OpenAI analysis, reachout, actions, contact summaries
 │   └── email_client.py                   # HTML email formatting + SMTP
+├── salesforce/
+│   ├── fte_scrape.py                     # Quarterly FTE tracking (LinkedIn employee counts)
+│   ├── sf_funnel_update.py               # Daily funnel metric upsert
+│   └── sf_update_report_dates.py         # Daily report date range roll
 ├── data/
 │   ├── input/                            # companies.csv, owner_mapping.json, contact_mapping.json
-│   └── output/                           # {Company}.json reports
+│   ├── output/                           # {Company}.json reports
+│   └── fte_company_linkedin_map.csv      # LinkedIn slug mapping for FTE tracking
+├── GOWT_mid_low.xlsx                     # FTE tracking Excel (quarterly employee counts)
 ├── .github/
 │   └── workflows/
-│       └── run-schedule.yml              # Monthly GitHub Actions schedule
+│       ├── run-schedule.yml              # Monthly scraper pipeline
+│       ├── quarterly-scrape.yml          # Quarterly GOWT Medium/Low scrape (manual only)
+│       └── fte-scrape.yml                # Quarterly FTE tracking scrape
 └── tests/
     ├── test_owner_mapping.py             # Preview owner → company distribution
     └── test_contact_pipeline.py          # End-to-end contact pipeline test
@@ -274,12 +282,37 @@ python salesforce.py
 python utils/email_client.py recipient@example.com
 ```
 
+### FTE Tracking
+
+Track LinkedIn employee counts for GOWT Medium/Low companies quarter-over-quarter.
+
+```bash
+# Auto-detect current quarter, scrape and update Excel
+python salesforce/fte_scrape.py
+
+# Specify quarter
+python salesforce/fte_scrape.py --quarter "Q3 2026"
+
+# Scrape but don't write to Excel
+python salesforce/fte_scrape.py --dry-run
+
+# Replay from cached results (skip scraping)
+python salesforce/fte_scrape.py --from-cache data/fte_scrape_Q2_2026.json
+```
+
+Scrapes 853 companies via BrightData LinkedIn Company Profile API, inserts a new quarter column in `GOWT_mid_low.xlsx`, and computes quarter-over-quarter change (Change and Change %). Results are cached to `data/fte_scrape_Q{n}_{year}.json`.
+
 ### GitHub Actions (Recommended)
 
-The pipeline is configured to run automatically via GitHub Actions:
+Three automated workflows:
 
-- **Schedule:** 25th of each month at 00:00 UTC
-- **Manual:** trigger via the Actions tab ("Run workflow")
+| Workflow | Schedule | Purpose |
+|----------|----------|---------|
+| `run-schedule.yml` | 25th of each month | Monthly GOWT High scrape pipeline |
+| `quarterly-scrape.yml` | Manual only (crons commented out) | Quarterly GOWT Medium/Low scrape (8 slices) |
+| `fte-scrape.yml` | 1st of Jan/Apr/Jul/Oct | Quarterly FTE tracking (LinkedIn employee counts) |
+
+All workflows support manual trigger via the Actions tab ("Run workflow").
 
 **Setup:**
 
@@ -354,7 +387,7 @@ The pipeline is designed for graceful degradation:
 | Contact not in Salesforce | No contact mapping | Pushes "no primary contact" to `P__c` |
 | Contact LinkedIn URL not found | No contact posts | Pushes "no recent activity" to `P__c` |
 | Contact scrape returns no posts | No contact summaries | Pushes "no recent activity" to `P__c` |
-| SerpAPI returns nothing | Company skipped | Moves to next company |
+| SERP search returns nothing | Company skipped | Moves to next company |
 | Firmable API fails | Reduced enrichment | Uses defaults, continues |
 | Salesforce auth fails | No CRM sync | Reports still emailed |
 | SMTP fails | Email not sent | Logged, pipeline completes |

@@ -239,3 +239,46 @@ Beyond the fields documented in the Origination Charts section, here are other i
 | `fid15__c` | EBITDA estimate | 22.4% |
 
 The Account object has standard fields (`Website`, `BillingAddress`, `Phone`, `Industry`, `Description`) but in this org most are empty — Opportunity has the better signal for company identification.
+
+## FTE Tracking
+
+Quarterly LinkedIn employee count tracking for GOWT Medium/Low companies. Built in May 2026.
+
+### How it works
+
+1. Pull 853 GOWT Medium/Low companies with verified LinkedIn slugs from `data/fte_company_linkedin_map.csv`
+2. Scrape employee counts via BrightData LinkedIn Company Profile dataset (`gd_l1vikfnt1wgvvqz95w`) in batches of 50
+3. Insert a new quarter column in `GOWT_mid_low.xlsx` and compute quarter-over-quarter change
+
+The Salesforce baseline (`fid50__c`) is in column 6. Each quarterly scrape adds a new column before the Change columns. The Change columns always compare the latest quarter against the immediately preceding one (QoQ), not against the baseline.
+
+### Script
+
+`salesforce/fte_scrape.py` — scrapes LinkedIn employee counts and updates the Excel.
+
+| Flag | Purpose |
+|---|---|
+| `--quarter "Q3 2026"` | Override quarter label (auto-detected if omitted) |
+| `--dry-run` | Scrape and compute but don't write to Excel |
+| `--from-cache path.json` | Skip scraping, load results from a cached JSON file |
+
+Scrape results are always cached to `data/fte_scrape_Q{n}_{year}.json` so they can be replayed without re-scraping.
+
+### Data files
+
+| File | Purpose |
+|---|---|
+| `GOWT_mid_low.xlsx` | FTE tracking Excel (sheet "FTE Tracking"). Columns: Company Name, Location, Industry (SF), Website, LinkedIn URL, Baseline FTE (SF), then one column per quarter, then Change and Change % |
+| `data/fte_company_linkedin_map.csv` | 853 companies with verified LinkedIn slugs. Columns: company_name, location, industry, website, linkedin_slug, linkedin_url, employees_sf, slug_source |
+| `data/fte_scrape_Q{n}_{year}.json` | Cached scrape results (slug → employee count) |
+
+### GitHub Actions
+
+`.github/workflows/fte-scrape.yml` — "Quarterly FTE Scrape"
+- Runs quarterly on the 1st of Jan/Apr/Jul/Oct at 00:00 UTC (and via `workflow_dispatch` with optional quarter override)
+- Scrapes all 853 companies, updates the Excel, and auto-commits `GOWT_mid_low.xlsx`
+- Uses secret `BRIGHTDATA_API_KEY` only (~$2.13 per run)
+
+### LinkedIn slug sources
+
+Slugs were resolved via Firmable (729 companies) and BrightData SERP fallback (134 companies), then filtered with name-similarity matching (threshold 0.35) to exclude false positives. 23 companies have no LinkedIn presence (mostly solo practices). 57 suspicious matches were excluded.
