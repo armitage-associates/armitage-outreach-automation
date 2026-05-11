@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 API_VERSION = "v62.0"
-TARGET_REPORTS = ["GOWT Ultra High's", "GOWT High's"]
+TARGET_REPORTS = ["GOWT High (Platform)"]
 
 domain = os.getenv("SALESFORCE_DOMAIN")
 
@@ -398,6 +398,73 @@ def import_companies_from_salesforce():
     logger.info("Import complete")
 
 
+def import_quarterly_companies(slice_index=None, total_slices=None):
+    """Import GOWT Medium/Low non-killed opportunities via SOQL for quarterly scraping."""
+    logger.info("Starting quarterly Salesforce company import")
+    token = get_access_token()
+    logger.info("Authenticated successfully")
+
+    soql = (
+        "SELECT Name, fid5__c FROM Opportunity "
+        "WHERE GOWT_Priority__c IN ('Medium', 'Low') "
+        "AND StageName != '7. Killed' "
+        "ORDER BY Name"
+    )
+    endpoint = f"query/?q={urllib.parse.quote(soql)}"
+
+    companies = []
+    result = sf_get(endpoint, token)
+    for record in result.get("records", []):
+        name = record.get("Name", "").strip()
+        location = record.get("fid5__c", "").strip()
+        if name and location:
+            companies.append((name, location))
+
+    while not result.get("done", True) and "nextRecordsUrl" in result:
+        next_url = result["nextRecordsUrl"].split(f"/services/data/{API_VERSION}/")[-1]
+        result = sf_get(next_url, token)
+        for record in result.get("records", []):
+            name = record.get("Name", "").strip()
+            location = record.get("fid5__c", "").strip()
+            if name and location:
+                companies.append((name, location))
+
+    logger.info(f"Total quarterly companies: {len(companies)}")
+
+    if slice_index is not None and total_slices is not None:
+        chunk_size = len(companies) // total_slices
+        remainder = len(companies) % total_slices
+        start = chunk_size * (slice_index - 1) + min(slice_index - 1, remainder)
+        end = start + chunk_size + (1 if slice_index <= remainder else 0)
+        companies = companies[start:end]
+        logger.info(f"Slice {slice_index}/{total_slices}: processing {len(companies)} companies")
+
+    write_companies_csv(companies)
+
+    company_names = list(set(c[0] for c in companies))
+    company_to_owner = get_owner_emails(token, company_names)
+    write_owner_mapping(company_to_owner)
+
+    try:
+        company_to_contact = get_primary_contacts(token, company_names)
+        write_contact_mapping(company_to_contact)
+    except Exception as e:
+        logger.error(f"Contact mapping failed (non-fatal, continuing): {e}")
+
+    logger.info("Quarterly import complete")
+
+
 if __name__ == "__main__":
+    import argparse
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    import_companies_from_salesforce()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--quarterly", action="store_true", help="Import GOWT Medium/Low non-killed opportunities")
+    parser.add_argument("--slice", type=str, help="Slice to process, e.g. 1/4 for first of four slices")
+    args = parser.parse_args()
+    if args.quarterly:
+        slice_index, total_slices = None, None
+        if args.slice:
+            slice_index, total_slices = (int(x) for x in args.slice.split("/"))
+        import_quarterly_companies(slice_index, total_slices)
+    else:
+        import_companies_from_salesforce()
