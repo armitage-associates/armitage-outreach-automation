@@ -1,7 +1,6 @@
 name: Quarterly GOWT Medium/Low Scrape
 
 on:
-  # Disabled — uncomment schedules to enable
   schedule:
     - cron: '0 0 1 1,4,7,10 *'
     - cron: '0 0 2 1,4,7,10 *'
