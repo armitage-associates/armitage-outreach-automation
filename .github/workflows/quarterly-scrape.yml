@@ -26,7 +26,6 @@ env:
   BATCH_SIZE: 5
   # Limit total companies processed (set to 0 for no limit)
   COMPANY_LIMIT: 0
-  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
   PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
   FIRMABLE_API_KEY: ${{ secrets.FIRMABLE_API_KEY }}
   BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
@@ -37,9 +36,6 @@ env:
   CONSUMER_KEY: ${{ secrets.CONSUMER_KEY }}
   CONSUMER_SECRET: ${{ secrets.CONSUMER_SECRET }}
   ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-  SMTP_USER: ${{ secrets.SMTP_USER }}
-  SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-  SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
 
 jobs:
   # ── Import GOWT Medium/Low from Salesforce + calculate batch plan ──────
@@ -163,7 +159,7 @@ jobs:
           echo "=== Scraping batch $BATCH/$TOTAL ==="
           LIMIT_FLAG=""
           if [ "$COMPANY_LIMIT" -gt 0 ]; then LIMIT_FLAG="--limit $COMPANY_LIMIT"; fi
-          python main.py --scrape-only --batch "$BATCH/$TOTAL" $LIMIT_FLAG
+          python main.py --scrape-only --skip-analysis --batch "$BATCH/$TOTAL" $LIMIT_FLAG
         done
 
     - name: Upload output
@@ -201,7 +197,7 @@ jobs:
           echo "=== Scraping batch $BATCH/$TOTAL ==="
           LIMIT_FLAG=""
           if [ "$COMPANY_LIMIT" -gt 0 ]; then LIMIT_FLAG="--limit $COMPANY_LIMIT"; fi
-          python main.py --scrape-only --batch "$BATCH/$TOTAL" $LIMIT_FLAG
+          python main.py --scrape-only --skip-analysis --batch "$BATCH/$TOTAL" $LIMIT_FLAG
         done
 
     - name: Upload output
@@ -239,7 +235,7 @@ jobs:
           echo "=== Scraping batch $BATCH/$TOTAL ==="
           LIMIT_FLAG=""
           if [ "$COMPANY_LIMIT" -gt 0 ]; then LIMIT_FLAG="--limit $COMPANY_LIMIT"; fi
-          python main.py --scrape-only --batch "$BATCH/$TOTAL" $LIMIT_FLAG
+          python main.py --scrape-only --skip-analysis --batch "$BATCH/$TOTAL" $LIMIT_FLAG
         done
 
     - name: Upload output
@@ -286,9 +282,9 @@ jobs:
           echo "SKIP_DELIVER=true" >> $GITHUB_ENV
         fi
 
-    - name: Deliver (push + email)
+    - name: Write results to Excel
       if: env.SKIP_DELIVER != 'true'
-      run: python main.py --deliver-only --no-email
+      run: python main.py --to-excel
 
     - name: Upload final results
       uses: actions/upload-artifact@v4
@@ -297,3 +293,19 @@ jobs:
         name: results-${{ github.run_number }}
         path: data/output/*.json
         retention-days: 30
+
+    - name: Commit updated Excel
+      if: env.SKIP_DELIVER != 'true'
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add GOWT_mid_low.xlsx
+        git diff --cached --quiet && echo "No changes to commit" && exit 0
+        QUARTER=$(python -c "
+        from datetime import datetime
+        now = datetime.now()
+        q = (now.month - 1) // 3 + 1
+        print(f'Q{q} {now.year}')
+        ")
+        git commit -m "Quarterly scrape: ${QUARTER}"
+        git push

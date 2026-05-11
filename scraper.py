@@ -8,7 +8,7 @@ from company.get_company_info import get_info
 from scrapers.linkedin_scraper_api import scrape_news_linkedin as scrape_linkedin_api
 from scrapers.linkedin_scraper_requests import scrape_news_linkedin as scrape_linkedin_requests
 from scrapers.linkedin_scraper_playwright import scrape_news_linkedin as scrape_linkedin_playwright
-from utils.summarizer import summarize_posts, generate_reachout_message, generate_potential_actions, add_posts_to_news_file, summarize_contact_posts
+from utils.summarizer import summarize_posts, generate_reachout_message, generate_potential_actions, add_posts_to_news_file, summarize_contact_posts, parse_posts_file
 from scrapers.perplexity_scraper import scrape_news_perplexity
 from company.serp_contact_url import get_contact_linkedin_url
 from scrapers.linkedin_contact_scraper import scrape_contact_linkedin
@@ -101,12 +101,16 @@ def add_linkedin_url(news_filepath, company_info):
         logger.warning(f"Could not add linkedin_url to {news_filepath}: {e}")
         return False
 
-async def scrape(company, location):
+async def scrape(company, location, skip_analysis=False):
     """
     Scrape news and LinkedIn posts for a single company.
 
     This function handles failures gracefully - if one step fails,
     it will continue with subsequent steps where possible.
+
+    Args:
+        skip_analysis: If True, skip contact scraping and OpenAI analysis.
+                       Raw LinkedIn posts are still parsed and added to the output JSON.
 
     Returns:
         dict: Results summary with success/failure status for each step
@@ -214,76 +218,94 @@ async def scrape(company, location):
     if scraper_used:
         logger.info(f"LinkedIn scrape completed using: {scraper_used}")
 
-    # Step 3.5: Scrape contact's LinkedIn posts
     contact_posts_filepath = None
     contact_summaries = None
     contact_name = None
 
-    try:
-        contact_mapping = load_contact_mapping()
-        contact_name = contact_mapping.get(company)
-
-        if contact_name:
-            logger.info(f"Found primary contact for {company}: {contact_name}")
-
-            contact_linkedin_url = get_contact_linkedin_url(contact_name, company)
-
-            if contact_linkedin_url:
-                contact_posts_filepath = scrape_contact_linkedin(contact_name, contact_linkedin_url, company)
-
-                if contact_posts_filepath:
-                    contact_summaries = summarize_contact_posts(contact_posts_filepath, contact_name)
-                    if contact_summaries is not None:
-                        results['contact_scrape'] = True
-                        logger.info(f"Contact scrape successful for {contact_name} ({company}): {len(contact_summaries)} posts")
-                    else:
-                        logger.warning(f"Contact post summarization returned None for {contact_name}")
-                else:
-                    logger.warning(f"No LinkedIn posts found for contact {contact_name}")
-            else:
-                logger.warning(f"Could not find LinkedIn URL for contact {contact_name}")
-        else:
-            logger.info(f"No primary contact mapped for {company}")
-    except Exception as e:
-        logger.warning(f"Contact scrape failed for {company}: {e}")
-        results['errors'].append(f"Contact scrape: {e}")
-
-    # Step 4: Summarize and merge data (only if we have both files)
-    if news_filepath and posts_filepath:
-        try:
-            summary_result = summarize_posts(news_filepath, posts_filepath)
-            if summary_result is not None:
+    if skip_analysis:
+        # Skip contact scraping and OpenAI analysis — just parse raw LinkedIn posts
+        logger.info(f"Skipping analysis for {company} (skip_analysis=True)")
+        if news_filepath and posts_filepath:
+            try:
+                posts = parse_posts_file(posts_filepath)
+                raw_posts = [{"content": p.get("Content", ""), "date": p.get("Date", "")} for p in posts]
+                with open(news_filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                data['posts'] = raw_posts
+                with open(news_filepath, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2)
                 results['summarization'] = True
-                logger.info(f"Summarization successful for {company}")
-            else:
-                logger.warning(f"Summarization returned no results for {company}")
-                results['errors'].append("Summarization returned None")
-        except Exception as e:
-            logger.exception(f"Unexpected error in summarization for {company}: {e}")
-            results['errors'].append(f"Summarization: {e}")
-    elif news_filepath:
-        # No LinkedIn posts, but still generate reachout message and actions from news alone
-        logger.info(f"No LinkedIn posts for {company} - generating actions from news only")
-        try:
-            with open(news_filepath, 'r', encoding='utf-8') as f:
-                company_data = json.load(f)
-            company_name = company_data.get('company', company)
-
-            message = generate_reachout_message(company_name, [], company_data)
-            potential_actions = generate_potential_actions(company_name, [], company_data)
-            add_posts_to_news_file(news_filepath, [], message, potential_actions)
-            results['summarization'] = True
-        except Exception as e:
-            logger.warning(f"Failed to generate actions from news for {company}: {e}")
-            results['errors'].append(f"News-only actions: {e}")
+                logger.info(f"Added {len(raw_posts)} raw posts to {news_filepath}")
+            except Exception as e:
+                logger.warning(f"Failed to parse raw posts for {company}: {e}")
+                results['errors'].append(f"Raw post parsing: {e}")
     else:
-        logger.info(f"Skipping summarization for {company} - no news data available")
+        # Step 3.5: Scrape contact's LinkedIn posts
+        try:
+            contact_mapping = load_contact_mapping()
+            contact_name = contact_mapping.get(company)
+
+            if contact_name:
+                logger.info(f"Found primary contact for {company}: {contact_name}")
+
+                contact_linkedin_url = get_contact_linkedin_url(contact_name, company)
+
+                if contact_linkedin_url:
+                    contact_posts_filepath = scrape_contact_linkedin(contact_name, contact_linkedin_url, company)
+
+                    if contact_posts_filepath:
+                        contact_summaries = summarize_contact_posts(contact_posts_filepath, contact_name)
+                        if contact_summaries is not None:
+                            results['contact_scrape'] = True
+                            logger.info(f"Contact scrape successful for {contact_name} ({company}): {len(contact_summaries)} posts")
+                        else:
+                            logger.warning(f"Contact post summarization returned None for {contact_name}")
+                    else:
+                        logger.warning(f"No LinkedIn posts found for contact {contact_name}")
+                else:
+                    logger.warning(f"Could not find LinkedIn URL for contact {contact_name}")
+            else:
+                logger.info(f"No primary contact mapped for {company}")
+        except Exception as e:
+            logger.warning(f"Contact scrape failed for {company}: {e}")
+            results['errors'].append(f"Contact scrape: {e}")
+
+        # Step 4: Summarize and merge data (only if we have both files)
+        if news_filepath and posts_filepath:
+            try:
+                summary_result = summarize_posts(news_filepath, posts_filepath)
+                if summary_result is not None:
+                    results['summarization'] = True
+                    logger.info(f"Summarization successful for {company}")
+                else:
+                    logger.warning(f"Summarization returned no results for {company}")
+                    results['errors'].append("Summarization returned None")
+            except Exception as e:
+                logger.exception(f"Unexpected error in summarization for {company}: {e}")
+                results['errors'].append(f"Summarization: {e}")
+        elif news_filepath:
+            logger.info(f"No LinkedIn posts for {company} - generating actions from news only")
+            try:
+                with open(news_filepath, 'r', encoding='utf-8') as f:
+                    company_data = json.load(f)
+                company_name = company_data.get('company', company)
+
+                message = generate_reachout_message(company_name, [], company_data)
+                potential_actions = generate_potential_actions(company_name, [], company_data)
+                add_posts_to_news_file(news_filepath, [], message, potential_actions)
+                results['summarization'] = True
+            except Exception as e:
+                logger.warning(f"Failed to generate actions from news for {company}: {e}")
+                results['errors'].append(f"News-only actions: {e}")
+        else:
+            logger.info(f"Skipping summarization for {company} - no news data available")
 
     # Step 5: Ensure posts field exists in JSON (even if empty) and add linkedin_url
     if news_filepath:
         ensure_posts_field(news_filepath)
         add_linkedin_url(news_filepath, company_info)
-        _add_contact_data_to_output(news_filepath, contact_name, contact_summaries)
+        if not skip_analysis:
+            _add_contact_data_to_output(news_filepath, contact_name, contact_summaries)
 
     # Cleanup: Delete LinkedIn posts file after summarization
     try:
@@ -343,13 +365,14 @@ def read_companies_from_csv(csv_path="data/input/companies.csv"):
         logger.error(f"Error reading CSV file: {e}")
         raise
 
-async def scrape_companies(companies_list, inter_delay=True):
+async def scrape_companies(companies_list, inter_delay=True, skip_analysis=False):
     """
     Scrape a specific subset of companies with random 5-15 min delays between them.
 
     Args:
         companies_list: List of (company_name, location) tuples to scrape
         inter_delay: Whether to add random delays between companies
+        skip_analysis: If True, skip contact scraping and OpenAI analysis
 
     Returns:
         list: Results for each company
@@ -362,7 +385,7 @@ async def scrape_companies(companies_list, inter_delay=True):
         logger.info(f"{'=' * 50}")
 
         try:
-            result = await scrape(company, location)
+            result = await scrape(company, location, skip_analysis=skip_analysis)
             all_results.append(result)
         except Exception as e:
             logger.exception(f"Critical error processing {company}: {e}")

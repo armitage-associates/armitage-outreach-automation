@@ -1,8 +1,10 @@
 import argparse
 import asyncio
+import json
 import logging
+from datetime import datetime
 from pathlib import Path
-from scraper import scrape_all_companies, scrape_companies, read_companies_from_csv
+from scraper import scrape_companies, read_companies_from_csv
 from salesforce import import_companies_from_salesforce, push_to_salesforce
 from utils.email_client import send_all_reports, send_owner_digests
 
@@ -18,6 +20,8 @@ def run(
     company: str = None,
     scrape_only: bool = False,
     deliver_only: bool = False,
+    to_excel: bool = False,
+    skip_analysis: bool = False,
     batch: str = None,
     limit: int = None,
 ):
@@ -30,11 +34,13 @@ def run(
         company: If provided, only process this single company.
         scrape_only: If True, import + scrape only — skip push, email, cleanup.
         deliver_only: If True, push + email + cleanup only — skip import + scrape.
+        to_excel: If True, write results to Excel instead of pushing to Salesforce.
+        skip_analysis: If True, skip OpenAI analysis and contact scraping.
         batch: Batch spec like "1/4" meaning "batch 1 of 4".
         limit: If provided, only process the first N companies from the list.
     """
     # ── Scrape phase ──
-    if not deliver_only:
+    if not deliver_only and not to_excel:
         if company:
             logger.info(f"Single-company mode: {company}")
             import_companies_from_salesforce()
@@ -44,7 +50,7 @@ def run(
                 logger.error(f"Company '{company}' not found in companies.csv")
                 return
             logger.info(f"Found: {match[0][0]} in {match[0][1]}")
-            asyncio.run(scrape_companies(match, inter_delay=False))
+            asyncio.run(scrape_companies(match, inter_delay=False, skip_analysis=skip_analysis))
         elif batch:
             batch_num, total_batches = _parse_batch(batch)
             if not scrape_only:
@@ -57,20 +63,25 @@ def run(
             logger.info(f"Batch {batch_num}/{total_batches}: processing {len(chunk)} of {len(companies)} companies")
             for name, loc in chunk:
                 logger.info(f"  - {name}")
-            asyncio.run(scrape_companies(chunk))
+            asyncio.run(scrape_companies(chunk, skip_analysis=skip_analysis))
         else:
             import_companies_from_salesforce()
             companies = read_companies_from_csv()
             if limit:
                 companies = companies[:limit]
                 logger.info(f"Limited to first {limit} companies")
-            asyncio.run(scrape_companies(companies))
+            asyncio.run(scrape_companies(companies, skip_analysis=skip_analysis))
 
     if scrape_only:
         logger.info("Scrape-only mode: skipping push, email, and cleanup")
         return
 
     # ── Deliver phase ──
+    if to_excel:
+        write_results_to_excel()
+        cleanup()
+        return
+
     push_to_salesforce()
 
     if send_digest:
@@ -103,6 +114,99 @@ def _get_batch_slice(companies: list, batch_num: int, total_batches: int, batch_
     start = (batch_num - 1) * batch_size
     end = start + batch_size
     return companies[start:end]
+
+
+def write_results_to_excel():
+    """Read output JSONs and write news + LinkedIn posts to a new sheet in GOWT_mid_low.xlsx."""
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    project_root = Path(__file__).parent
+    excel_path = project_root / "GOWT_mid_low.xlsx"
+    output_dir = project_root / "data" / "output"
+
+    now = datetime.now()
+    quarter = f"Q{(now.month - 1) // 3 + 1} {now.year}"
+
+    results = []
+    for json_file in sorted(output_dir.glob("*.json")):
+        try:
+            with open(json_file) as f:
+                data = json.load(f)
+            if "company" in data:
+                results.append(data)
+        except Exception as e:
+            logger.warning(f"Could not read {json_file}: {e}")
+
+    if not results:
+        logger.warning("No output files found for Excel export")
+        return
+
+    wb = load_workbook(excel_path)
+    sheet_name = f"{quarter} News"
+
+    if sheet_name in wb.sheetnames:
+        del wb[sheet_name]
+
+    ws = wb.create_sheet(sheet_name)
+
+    headers = ["Company", "Location", "News Articles", "LinkedIn Posts", "LinkedIn URL"]
+    header_font = Font(bold=True, size=11, color="2F5496")
+    header_fill = PatternFill(start_color="D6E4F0", end_color="D6E4F0", fill_type="solid")
+    thin_border = Border(
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9'),
+    )
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center')
+        cell.border = thin_border
+
+    for row_idx, data in enumerate(results, 2):
+        ws.cell(row=row_idx, column=1, value=data.get("company", "")).border = thin_border
+        ws.cell(row=row_idx, column=2, value=data.get("location", "")).border = thin_border
+
+        articles = data.get("articles", [])
+        article_lines = []
+        for a in articles:
+            headline = a.get("headline", "")
+            date = a.get("date", "")
+            summary = a.get("summary", "")
+            line = f"{headline} ({date})"
+            if summary:
+                line += f"\n{summary}"
+            article_lines.append(line)
+        cell = ws.cell(row=row_idx, column=3, value="\n\n".join(article_lines))
+        cell.alignment = Alignment(wrap_text=True, vertical='top')
+        cell.border = thin_border
+
+        posts = data.get("posts", [])
+        post_lines = []
+        for p in posts:
+            content = p.get("content", p.get("summary", ""))
+            date = p.get("date", "")
+            if len(content) > 500:
+                content = content[:500] + "..."
+            post_lines.append(f"[{date}] {content}")
+        cell = ws.cell(row=row_idx, column=4, value="\n\n".join(post_lines))
+        cell.alignment = Alignment(wrap_text=True, vertical='top')
+        cell.border = thin_border
+
+        ws.cell(row=row_idx, column=5, value=data.get("linkedin_url", "")).border = thin_border
+
+    ws.column_dimensions['A'].width = 30
+    ws.column_dimensions['B'].width = 20
+    ws.column_dimensions['C'].width = 80
+    ws.column_dimensions['D'].width = 80
+    ws.column_dimensions['E'].width = 50
+
+    wb.save(excel_path)
+    logger.info(f"Wrote {len(results)} companies to sheet '{sheet_name}' in {excel_path}")
 
 
 def cleanup(input_dir: str = "data/input", output_dir: str = "data/output"):
@@ -141,6 +245,16 @@ if __name__ == "__main__":
         help="Push + email + cleanup only — use existing output files, skip scraping",
     )
     parser.add_argument(
+        "--to-excel",
+        action="store_true",
+        help="Write results to Excel (GOWT_mid_low.xlsx) instead of pushing to Salesforce. Reads existing output files.",
+    )
+    parser.add_argument(
+        "--skip-analysis",
+        action="store_true",
+        help="Skip OpenAI analysis and contact scraping. Raw news + LinkedIn posts only.",
+    )
+    parser.add_argument(
         "--no-email",
         action="store_true",
         help="Skip sending emails (useful for testing)",
@@ -161,6 +275,8 @@ if __name__ == "__main__":
             send_digest=False,
             scrape_only=args.scrape_only,
             deliver_only=args.deliver_only,
+            to_excel=args.to_excel,
+            skip_analysis=args.skip_analysis,
             batch=args.batch,
             limit=args.limit,
         )
@@ -170,6 +286,8 @@ if __name__ == "__main__":
             company=args.company,
             scrape_only=args.scrape_only,
             deliver_only=args.deliver_only,
+            to_excel=args.to_excel,
+            skip_analysis=args.skip_analysis,
             batch=args.batch,
             limit=args.limit,
         )

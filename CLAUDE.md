@@ -114,7 +114,9 @@ Located in `salesforce/`:
   2. `python salesforce/sf_update_report_dates.py`
 - Uses secrets `SALESFORCE_DOMAIN`, `CONSUMER_KEY`, `CONSUMER_SECRET` (same as the monthly scraper workflow)
 
-`.github/workflows/run-schedule.yml` — monthly scraper pipeline (unrelated to Origination Charts, predates this work).
+`.github/workflows/run-schedule.yml` — monthly scraper pipeline. Scrapes GOWT High companies with full analysis (OpenAI) and pushes to Salesforce.
+
+`.github/workflows/quarterly-scrape.yml` — quarterly scrape for GOWT Medium/Low. Scrapes news + LinkedIn posts **without AI analysis** (`--skip-analysis`), writes results to a new sheet in `GOWT_mid_low.xlsx` via `--to-excel`. Does not push to Salesforce. Schedule crons are commented out (manual trigger only).
 
 ### Salesforce API gotchas we hit
 

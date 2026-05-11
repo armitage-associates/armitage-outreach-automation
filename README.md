@@ -282,6 +282,20 @@ python salesforce.py
 python utils/email_client.py recipient@example.com
 ```
 
+### Quarterly Scrape (News + LinkedIn to Excel)
+
+Scrape news and LinkedIn posts for GOWT Medium/Low companies without AI analysis, and write results to `GOWT_mid_low.xlsx`.
+
+```bash
+# Scrape without analysis (used by quarterly workflow)
+python main.py --scrape-only --skip-analysis --batch "1/8"
+
+# Write scraped results to Excel
+python main.py --to-excel
+```
+
+The `--skip-analysis` flag skips OpenAI analysis and contact scraping — only raw news articles (from Perplexity) and LinkedIn posts (from BrightData) are collected. The `--to-excel` flag reads output JSONs and writes them to a new sheet (e.g., "Q2 2026 News") in the Excel file.
+
 ### FTE Tracking
 
 Track LinkedIn employee counts for GOWT Medium/Low companies quarter-over-quarter.
@@ -309,7 +323,7 @@ Three automated workflows:
 | Workflow | Schedule | Purpose |
 |----------|----------|---------|
 | `run-schedule.yml` | 25th of each month | Monthly GOWT High scrape pipeline |
-| `quarterly-scrape.yml` | Manual only (crons commented out) | Quarterly GOWT Medium/Low scrape (8 slices) |
+| `quarterly-scrape.yml` | Manual only (crons commented out) | Quarterly GOWT Medium/Low news + LinkedIn to Excel (8 slices) |
 | `fte-scrape.yml` | 1st of Jan/Apr/Jul/Oct | Quarterly FTE tracking (LinkedIn employee counts) |
 
 All workflows support manual trigger via the Actions tab ("Run workflow").
