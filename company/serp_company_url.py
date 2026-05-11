@@ -1,12 +1,9 @@
 import os
 import logging
-import serpapi
+import requests
 from dotenv import load_dotenv
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote_plus
 
-# -------------------------------------------------------------------
-# Logging configuration
-# -------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -14,40 +11,56 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-API_KEY = os.getenv("SERP_API_KEY")
+API_KEY = os.getenv("BRIGHTDATA_API_KEY")
+
 
 def clean_domain(url):
-        if not url.startswith(('http://', 'https://')):
-            url = 'https://' + url
-        return urlparse(url).netloc.replace('www.', '').lower()
+    if not url.startswith(('http://', 'https://')):
+        url = 'https://' + url
+    return urlparse(url).netloc.replace('www.', '').lower()
+
 
 def get_company_url(name, location):
     """
-    Get company website URL using SERP API Google search.
+    Get company website URL using Bright Data SERP API Google search.
 
     Returns:
         str: Company domain on success
         None: On any failure (API error, no results, etc.)
     """
-    params = {
-        "engine": "google",
-        "location": "Australia",
-        "google_domain": "google.com.au",
-        "hl": "en",
-        "gl": "au",
-        "q": f"{name} {location} Company Page",
-        "api_key": API_KEY
+    query = f"{name} {location} Company Page"
+
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "zone": "serp_api1",
+        "url": f"https://www.google.com/search?q={quote_plus(query)}&gl=au&hl=en&brd_json=1",
+        "format": "raw",
     }
 
     try:
-        client = serpapi.Client(api_key=params["api_key"])
-        results = client.search(params)
+        resp = requests.post(
+            "https://api.brightdata.com/request",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
 
-        if not results.get("organic_results"):
+        if not resp.ok:
+            logger.error(f"Bright Data SERP API error {resp.status_code}: {resp.text[:200]}")
+            return None
+
+        data = resp.json()
+        organic = data.get("organic", [])
+
+        if not organic:
             logger.warning(f"No search results found for {name} in {location}")
             return None
 
-        link = results["organic_results"][0].get("link")
+        link = organic[0].get("link")
         if not link:
             logger.warning(f"First result has no link for {name} in {location}")
             return None
@@ -57,8 +70,9 @@ def get_company_url(name, location):
         return domain
 
     except Exception as e:
-        logger.exception(f"SERP API error for {name} in {location}: {e}")
+        logger.exception(f"Bright Data SERP API error for {name} in {location}: {e}")
         return None
 
+
 if __name__ == "__main__":
-  print(get_company_url("LAB Group", "Melbourne"))
+    print(get_company_url("LAB Group", "Melbourne"))

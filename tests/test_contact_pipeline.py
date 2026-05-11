@@ -109,7 +109,7 @@ def test_salesforce(company_names):
 # ── Step 2: SerpAPI — find LinkedIn profile URL ──────────────────────────────
 
 def test_search(company_to_contact):
-    banner("Step 2: SerpAPI — Google Search for LinkedIn Profile URL")
+    banner("Step 2: Bright Data SERP — Google Search for LinkedIn Profile URL")
 
     from company.serp_contact_url import get_contact_linkedin_url
 

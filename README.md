@@ -189,8 +189,7 @@ Fill in the following environment variables:
 | `OPENAI_API_KEY` | OpenAI | Post analysis and reachout generation (GPT-4o-mini) |
 | `PERPLEXITY_API_KEY` | Perplexity AI | News scraping (sonar-pro model) |
 | `FIRMABLE_API_KEY` | Firmable | Company enrichment (HQ, LinkedIn ID, industry) |
-| `SERP_API_KEY` | SerpAPI | Google Search for company website URLs |
-| `BRIGHTDATA_API_KEY` | BrightData | LinkedIn post scraping (primary method) |
+| `BRIGHTDATA_API_KEY` | BrightData | LinkedIn post scraping and Google Search (SERP API) |
 
 **Salesforce:**
 
@@ -338,10 +337,9 @@ When no primary contact or no recent posts: `"contact_name": null, "contact_post
 | Service | Model / API | Role |
 |---------|-------------|------|
 | [Salesforce](https://salesforce.com) | REST API v62.0 | Company import and results push |
-| [SerpAPI](https://serpapi.com) | Google Search | Find company website domains |
 | [Firmable](https://firmable.com) | Company API | Enrich with LinkedIn ID, industry, HQ |
 | [Perplexity AI](https://perplexity.ai) | sonar-pro | News article discovery |
-| [BrightData](https://brightdata.com) | Dataset API | LinkedIn post scraping |
+| [BrightData](https://brightdata.com) | Dataset API + SERP API | LinkedIn post scraping and Google Search |
 | [OpenAI](https://openai.com) | gpt-4o-mini | Growth analysis, reachout, actions |
 | Gmail | SMTP (587/TLS) | Email delivery |
 

@@ -1,7 +1,8 @@
 import os
 import logging
-import serpapi
+import requests
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
 
 logging.basicConfig(
     level=logging.INFO,
@@ -10,12 +11,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-API_KEY = os.getenv("SERP_API_KEY")
+API_KEY = os.getenv("BRIGHTDATA_API_KEY")
 
 
 def get_contact_linkedin_url(contact_name, company_name):
     """
-    Search Google for a person's LinkedIn profile URL.
+    Search Google for a person's LinkedIn profile URL using Bright Data SERP API.
 
     Args:
         contact_name: Full name of the contact (e.g. "Nick Gannoulis")
@@ -25,25 +26,39 @@ def get_contact_linkedin_url(contact_name, company_name):
         str: LinkedIn profile URL on success
         None: On any failure
     """
-    params = {
-        "engine": "google",
-        "location": "Australia",
-        "google_domain": "google.com.au",
-        "hl": "en",
-        "gl": "au",
-        "q": f"{contact_name} {company_name} LinkedIn",
-        "api_key": API_KEY,
+    query = f"{contact_name} {company_name} LinkedIn"
+
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "zone": "serp_api1",
+        "url": f"https://www.google.com/search?q={quote_plus(query)}&gl=au&hl=en&brd_json=1",
+        "format": "raw",
     }
 
     try:
-        client = serpapi.Client(api_key=params["api_key"])
-        results = client.search(params)
+        resp = requests.post(
+            "https://api.brightdata.com/request",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
 
-        if not results.get("organic_results"):
+        if not resp.ok:
+            logger.error(f"Bright Data SERP API error {resp.status_code}: {resp.text[:200]}")
+            return None
+
+        data = resp.json()
+        organic = data.get("organic", [])
+
+        if not organic:
             logger.warning(f"No search results for contact {contact_name} at {company_name}")
             return None
 
-        for result in results["organic_results"][:5]:
+        for result in organic[:5]:
             link = result.get("link", "")
             if "linkedin.com/in/" in link:
                 logger.info(f"Found LinkedIn URL for {contact_name}: {link}")
@@ -53,7 +68,7 @@ def get_contact_linkedin_url(contact_name, company_name):
         return None
 
     except Exception as e:
-        logger.exception(f"SERP API error searching for {contact_name}: {e}")
+        logger.exception(f"Bright Data SERP API error searching for {contact_name}: {e}")
         return None
 
 

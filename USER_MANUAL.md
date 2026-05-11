@@ -62,10 +62,9 @@ The system depends on several external services. If any one fails, the system co
 |---------|-------------|---------|
 | **Salesforce** | Source of companies and destination for results | salesforce.com |
 | **Perplexity AI** | Searches for recent news articles | perplexity.ai |
-| **BrightData** | Scrapes LinkedIn company and contact pages | brightdata.com |
+| **BrightData** | Scrapes LinkedIn pages and Google search for company websites/contact profiles | brightdata.com |
 | **OpenAI** | Analyses data and writes summaries/messages | openai.com |
 | **Firmable** | Looks up company details (HQ, industry, LinkedIn ID) | firmable.com |
-| **SerpAPI** | Google search to find company websites and contact LinkedIn profiles | serpapi.com |
 | **Gmail SMTP** | Sends the email digests | gmail.com |
 
 ---
@@ -197,21 +196,6 @@ Firmable API error: 401
 ### 7. SerpAPI: API key invalid or quota exceeded
 
 **What it looks like:**
-```
-SerpAPI error: Invalid API key
-```
-
-**What it means:** Your SerpAPI key is wrong or you've used all your monthly searches.
-
-**How to fix:**
-1. Go to https://serpapi.com/manage-api-key
-2. Check your key and remaining searches
-3. If needed, update `SERP_API_KEY` in GitHub Secrets
-
-**Impact if not fixed:** The system cannot find company websites or contact LinkedIn profiles. Most companies will be skipped entirely.
-
----
-
 ### 8. GitHub Actions: Workflow did not run on the 25th
 
 **What it means:** GitHub scheduled workflows can sometimes be delayed or skipped if the repository has had no recent activity (pushes or commits) in the last 60 days.
@@ -266,7 +250,6 @@ The secrets you may need to update:
 | `OPENAI_API_KEY` | OpenAI | https://platform.openai.com/api-keys |
 | `PERPLEXITY_API_KEY` | Perplexity | https://www.perplexity.ai/settings/api |
 | `FIRMABLE_API_KEY` | Firmable | Firmable dashboard |
-| `SERP_API_KEY` | SerpAPI | https://serpapi.com/manage-api-key |
 | `BRIGHTDATA_API_KEY` | BrightData | https://brightdata.com/cp |
 | `SALESFORCE_PASSWORD` | Salesforce | Your Salesforce login password |
 | `SALESFORCE_SECURITY_TOKEN` | Salesforce | Salesforce > Settings > Reset My Security Token |
