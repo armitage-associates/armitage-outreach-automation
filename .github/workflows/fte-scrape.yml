@@ -1,0 +1,50 @@
+name: Quarterly FTE Scrape
+
+on:
+  schedule:
+    - cron: '0 0 1 1,4,7,10 *'
+
+  workflow_dispatch:
+    inputs:
+      quarter:
+        description: 'Quarter label (e.g. "Q3 2026"). Leave empty to auto-detect.'
+        required: false
+
+env:
+  BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - run: pip install requests openpyxl
+
+    - name: Run FTE scrape
+      run: |
+        QUARTER_FLAG=""
+        if [ -n "${{ github.event.inputs.quarter }}" ]; then
+          QUARTER_FLAG="--quarter \"${{ github.event.inputs.quarter }}\""
+        fi
+        eval python salesforce/fte_scrape.py $QUARTER_FLAG
+
+    - name: Commit updated Excel
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add GOWT_mid_low.xlsx
+        git diff --cached --quiet && echo "No changes to commit" && exit 0
+        QUARTER=$(python -c "
+        from datetime import datetime
+        now = datetime.now()
+        q = (now.month - 1) // 3 + 1
+        print(f'Q{q} {now.year}')
+        ")
+        git commit -m "Update FTE tracking: ${QUARTER}"
+        git push
