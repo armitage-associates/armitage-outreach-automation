@@ -211,10 +211,10 @@ def update_excel(results, quarter_label, dry_run=False):
         cell.border = THIN_BORDER
         logger.info(f"Inserted new column {quarter_col} for {quarter_label}")
 
-    # Fill data — match by LinkedIn URL in column 6
+    # Fill data — match by LinkedIn URL in column 7
     filled = 0
     for row in range(2, ws.max_row + 1):
-        li_url = ws.cell(row=row, column=6).value
+        li_url = ws.cell(row=row, column=7).value
         if not li_url or "linkedin.com/company/" not in str(li_url):
             continue
         slug = str(li_url).split("linkedin.com/company/")[-1].strip("/").split("/")[0]
@@ -228,14 +228,14 @@ def update_excel(results, quarter_label, dry_run=False):
             filled += 1
 
     # Find previous quarter column (the one immediately before current quarter)
-    # Column layout: A=Company, B=Location, C=Owner, D=Industry, E=Website, F=LinkedIn URL, G=Baseline FTE, H+=quarters
+    # Column layout: A=Company, B=Location, C=Owner, D=Priority, E=Industry, F=Website, G=LinkedIn URL, H=Baseline FTE, I+=quarters
     prev_col = None
     prev_label = None
-    if quarter_col > 8:
+    if quarter_col > 9:
         prev_col = quarter_col - 1
         prev_label = ws.cell(row=1, column=prev_col).value
-    elif quarter_col == 8:
-        prev_col = 7
+    elif quarter_col == 9:
+        prev_col = 8
         prev_label = "Baseline FTE (SF)"
 
     # Update Change columns (now shifted if we inserted)
