@@ -47,6 +47,43 @@ def get_current_quarter():
     return f"Q{q} {now.year}"
 
 
+def refresh_owners(ws):
+    """Refresh the Owner column (C) from Salesforce opportunity owners."""
+    import urllib.parse
+    sys.path.insert(0, PROJECT_ROOT)
+    from salesforce import get_access_token, sf_get
+
+    token = get_access_token()
+    soql = "SELECT Name, Owner.Name FROM Opportunity WHERE GOWT_Priority__c IN ('Medium', 'Low') ORDER BY Name"
+    result = sf_get(f"query/?q={urllib.parse.quote(soql)}", token)
+
+    owner_map = {}
+    for r in result.get("records", []):
+        name = r.get("Name", "").strip()
+        owner = r.get("Owner", {}).get("Name", "")
+        if name:
+            owner_map[name] = owner
+
+    while not result.get("done", True) and "nextRecordsUrl" in result:
+        next_url = result["nextRecordsUrl"].split("/services/data/v62.0/")[-1]
+        result = sf_get(next_url, token)
+        for r in result.get("records", []):
+            name = r.get("Name", "").strip()
+            owner = r.get("Owner", {}).get("Name", "")
+            if name:
+                owner_map[name] = owner
+
+    updated = 0
+    for row in range(2, ws.max_row + 1):
+        company = ws.cell(row=row, column=1).value
+        if company and company.strip() in owner_map:
+            ws.cell(row=row, column=3, value=owner_map[company.strip()])
+            updated += 1
+
+    logger.info(f"Refreshed owners for {updated}/{ws.max_row - 1} companies")
+    return updated
+
+
 def load_companies():
     companies = []
     with open(LINKEDIN_MAP_PATH, "r", encoding="utf-8") as f:
@@ -140,6 +177,12 @@ def update_excel(results, quarter_label, dry_run=False):
     wb = load_workbook(EXCEL_PATH)
     ws = wb[SHEET_NAME]
 
+    # Refresh owner column from Salesforce
+    try:
+        refresh_owners(ws)
+    except Exception as e:
+        logger.warning(f"Owner refresh failed (non-fatal): {e}")
+
     # Check if this quarter already has a column
     existing_col = None
     for col in range(1, ws.max_column + 1):
@@ -168,10 +211,10 @@ def update_excel(results, quarter_label, dry_run=False):
         cell.border = THIN_BORDER
         logger.info(f"Inserted new column {quarter_col} for {quarter_label}")
 
-    # Fill data — match by LinkedIn URL in column 5
+    # Fill data — match by LinkedIn URL in column 6
     filled = 0
     for row in range(2, ws.max_row + 1):
-        li_url = ws.cell(row=row, column=5).value
+        li_url = ws.cell(row=row, column=6).value
         if not li_url or "linkedin.com/company/" not in str(li_url):
             continue
         slug = str(li_url).split("linkedin.com/company/")[-1].strip("/").split("/")[0]
@@ -185,13 +228,14 @@ def update_excel(results, quarter_label, dry_run=False):
             filled += 1
 
     # Find previous quarter column (the one immediately before current quarter)
+    # Column layout: A=Company, B=Location, C=Owner, D=Industry, E=Website, F=LinkedIn URL, G=Baseline FTE, H+=quarters
     prev_col = None
     prev_label = None
-    if quarter_col > 7:
+    if quarter_col > 8:
         prev_col = quarter_col - 1
         prev_label = ws.cell(row=1, column=prev_col).value
-    elif quarter_col == 7:
-        prev_col = 6
+    elif quarter_col == 8:
+        prev_col = 7
         prev_label = "Baseline FTE (SF)"
 
     # Update Change columns (now shifted if we inserted)

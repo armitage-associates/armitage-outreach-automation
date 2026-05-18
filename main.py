@@ -117,7 +117,11 @@ def _get_batch_slice(companies: list, batch_num: int, total_batches: int, batch_
 
 
 def write_results_to_excel():
-    """Read output JSONs and write news + LinkedIn posts to a new sheet in GOWT_mid_low.xlsx."""
+    """Read output JSONs and append news + LinkedIn posts to a sheet in GOWT_mid_low.xlsx.
+
+    Creates the sheet if it doesn't exist; appends rows if it does (so Medium and Low
+    workflows can write to the same quarter sheet sequentially).
+    """
     from openpyxl import load_workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
@@ -145,11 +149,6 @@ def write_results_to_excel():
     wb = load_workbook(excel_path)
     sheet_name = f"{quarter} News"
 
-    if sheet_name in wb.sheetnames:
-        del wb[sheet_name]
-
-    ws = wb.create_sheet(sheet_name)
-
     headers = ["Company", "Location", "News Articles", "LinkedIn Posts", "LinkedIn URL"]
     header_font = Font(bold=True, size=11, color="2F5496")
     header_fill = PatternFill(start_color="D6E4F0", end_color="D6E4F0", fill_type="solid")
@@ -160,14 +159,26 @@ def write_results_to_excel():
         bottom=Side(style='thin', color='D9D9D9'),
     )
 
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal='center')
-        cell.border = thin_border
+    if sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        start_row = ws.max_row + 1
+        logger.info(f"Appending to existing sheet '{sheet_name}' from row {start_row}")
+    else:
+        ws = wb.create_sheet(sheet_name)
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center')
+            cell.border = thin_border
+        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 80
+        ws.column_dimensions['D'].width = 80
+        ws.column_dimensions['E'].width = 50
+        start_row = 2
 
-    for row_idx, data in enumerate(results, 2):
+    for row_idx, data in enumerate(results, start_row):
         ws.cell(row=row_idx, column=1, value=data.get("company", "")).border = thin_border
         ws.cell(row=row_idx, column=2, value=data.get("location", "")).border = thin_border
 
@@ -199,14 +210,8 @@ def write_results_to_excel():
 
         ws.cell(row=row_idx, column=5, value=data.get("linkedin_url", "")).border = thin_border
 
-    ws.column_dimensions['A'].width = 30
-    ws.column_dimensions['B'].width = 20
-    ws.column_dimensions['C'].width = 80
-    ws.column_dimensions['D'].width = 80
-    ws.column_dimensions['E'].width = 50
-
     wb.save(excel_path)
-    logger.info(f"Wrote {len(results)} companies to sheet '{sheet_name}' in {excel_path}")
+    logger.info(f"Wrote {len(results)} companies to sheet '{sheet_name}' in {excel_path} (starting row {start_row})")
 
 
 def cleanup(input_dir: str = "data/input", output_dir: str = "data/output"):

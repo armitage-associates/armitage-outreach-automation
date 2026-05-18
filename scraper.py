@@ -7,7 +7,6 @@ import random
 from company.get_company_info import get_info
 from scrapers.linkedin_scraper_api import scrape_news_linkedin as scrape_linkedin_api
 from scrapers.linkedin_scraper_requests import scrape_news_linkedin as scrape_linkedin_requests
-from scrapers.linkedin_scraper_playwright import scrape_news_linkedin as scrape_linkedin_playwright
 from utils.summarizer import summarize_posts, generate_reachout_message, generate_potential_actions, add_posts_to_news_file, summarize_contact_posts, parse_posts_file
 from scrapers.perplexity_scraper import scrape_news_perplexity
 from company.serp_contact_url import get_contact_linkedin_url
@@ -198,6 +197,7 @@ async def scrape(company, location, skip_analysis=False):
 
     if not posts_filepath and use_playwright_fallback:
         try:
+            from scrapers.linkedin_scraper_playwright import scrape_news_linkedin as scrape_linkedin_playwright
             logger.info(f"Falling back to Playwright scraper for {company}")
             posts_filepath = await scrape_linkedin_playwright(company_info)
             if posts_filepath:
@@ -222,25 +222,8 @@ async def scrape(company, location, skip_analysis=False):
     contact_summaries = None
     contact_name = None
 
-    if skip_analysis:
-        # Skip contact scraping and OpenAI analysis — just parse raw LinkedIn posts
-        logger.info(f"Skipping analysis for {company} (skip_analysis=True)")
-        if news_filepath and posts_filepath:
-            try:
-                posts = parse_posts_file(posts_filepath)
-                raw_posts = [{"content": p.get("Content", ""), "date": p.get("Date", "")} for p in posts]
-                with open(news_filepath, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                data['posts'] = raw_posts
-                with open(news_filepath, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=2)
-                results['summarization'] = True
-                logger.info(f"Added {len(raw_posts)} raw posts to {news_filepath}")
-            except Exception as e:
-                logger.warning(f"Failed to parse raw posts for {company}: {e}")
-                results['errors'].append(f"Raw post parsing: {e}")
-    else:
-        # Step 3.5: Scrape contact's LinkedIn posts
+    if not skip_analysis:
+        # Step 3.5: Scrape contact's LinkedIn posts (full pipeline only)
         try:
             contact_mapping = load_contact_mapping()
             contact_name = contact_mapping.get(company)
@@ -270,35 +253,38 @@ async def scrape(company, location, skip_analysis=False):
             logger.warning(f"Contact scrape failed for {company}: {e}")
             results['errors'].append(f"Contact scrape: {e}")
 
-        # Step 4: Summarize and merge data (only if we have both files)
-        if news_filepath and posts_filepath:
-            try:
+    # Step 4: Analyze posts for growth signals
+    if news_filepath and posts_filepath:
+        try:
+            if skip_analysis:
+                summary_result = summarize_posts(news_filepath, posts_filepath, filter_only=True)
+            else:
                 summary_result = summarize_posts(news_filepath, posts_filepath)
-                if summary_result is not None:
-                    results['summarization'] = True
-                    logger.info(f"Summarization successful for {company}")
-                else:
-                    logger.warning(f"Summarization returned no results for {company}")
-                    results['errors'].append("Summarization returned None")
-            except Exception as e:
-                logger.exception(f"Unexpected error in summarization for {company}: {e}")
-                results['errors'].append(f"Summarization: {e}")
-        elif news_filepath:
-            logger.info(f"No LinkedIn posts for {company} - generating actions from news only")
-            try:
-                with open(news_filepath, 'r', encoding='utf-8') as f:
-                    company_data = json.load(f)
-                company_name = company_data.get('company', company)
-
-                message = generate_reachout_message(company_name, [], company_data)
-                potential_actions = generate_potential_actions(company_name, [], company_data)
-                add_posts_to_news_file(news_filepath, [], message, potential_actions)
+            if summary_result is not None:
                 results['summarization'] = True
-            except Exception as e:
-                logger.warning(f"Failed to generate actions from news for {company}: {e}")
-                results['errors'].append(f"News-only actions: {e}")
-        else:
-            logger.info(f"Skipping summarization for {company} - no news data available")
+                logger.info(f"Summarization successful for {company}")
+            else:
+                logger.warning(f"Summarization returned no results for {company}")
+                results['errors'].append("Summarization returned None")
+        except Exception as e:
+            logger.exception(f"Unexpected error in summarization for {company}: {e}")
+            results['errors'].append(f"Summarization: {e}")
+    elif news_filepath and not skip_analysis:
+        logger.info(f"No LinkedIn posts for {company} - generating actions from news only")
+        try:
+            with open(news_filepath, 'r', encoding='utf-8') as f:
+                company_data = json.load(f)
+            company_name = company_data.get('company', company)
+
+            message = generate_reachout_message(company_name, [], company_data)
+            potential_actions = generate_potential_actions(company_name, [], company_data)
+            add_posts_to_news_file(news_filepath, [], message, potential_actions)
+            results['summarization'] = True
+        except Exception as e:
+            logger.warning(f"Failed to generate actions from news for {company}: {e}")
+            results['errors'].append(f"News-only actions: {e}")
+    else:
+        logger.info(f"Skipping summarization for {company} - no news data available")
 
     # Step 5: Ensure posts field exists in JSON (even if empty) and add linkedin_url
     if news_filepath:

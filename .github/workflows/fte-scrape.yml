@@ -12,6 +12,9 @@ on:
 
 env:
   BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
+  SALESFORCE_DOMAIN: ${{ secrets.SALESFORCE_DOMAIN }}
+  CONSUMER_KEY: ${{ secrets.CONSUMER_KEY }}
+  CONSUMER_SECRET: ${{ secrets.CONSUMER_SECRET }}
 
 jobs:
   scrape:
@@ -24,7 +27,7 @@ jobs:
       with:
         python-version: '3.12'
 
-    - run: pip install requests openpyxl
+    - run: pip install requests openpyxl python-dotenv
 
     - name: Run FTE scrape
       run: |

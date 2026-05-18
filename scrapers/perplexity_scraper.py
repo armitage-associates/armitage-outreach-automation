@@ -139,6 +139,7 @@ async def scrape_news_perplexity(company_info, timeframe):
         content = response.choices[0].message.content
         data = json.loads(content)
 
+        data["location"] = company_info.get("city", "")
         data["articles"] = sorted(
             data["articles"],
             key=parse_date,

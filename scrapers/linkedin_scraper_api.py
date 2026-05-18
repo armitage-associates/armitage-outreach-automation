@@ -98,8 +98,8 @@ def scrape_news_linkedin(company_info):
 
         # Step 2: Poll for completion
         poll_url = f"https://api.brightdata.com/datasets/v3/progress/{snapshot_id}"
-        max_wait = 1800  # 30 minutes max
-        poll_interval = 60  # seconds between polls
+        max_wait = 900  # 15 minutes max
+        poll_interval = 30  # seconds between polls
         elapsed = 0
 
         while elapsed < max_wait:

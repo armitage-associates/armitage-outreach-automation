@@ -398,15 +398,26 @@ def import_companies_from_salesforce():
     logger.info("Import complete")
 
 
-def import_quarterly_companies(slice_index=None, total_slices=None):
-    """Import GOWT Medium/Low non-killed opportunities via SOQL for quarterly scraping."""
-    logger.info("Starting quarterly Salesforce company import")
+def import_quarterly_companies(slice_index=None, total_slices=None, priority=None):
+    """Import GOWT Medium/Low non-killed opportunities via SOQL for quarterly scraping.
+
+    Args:
+        priority: If provided, filter to a single priority ('Medium' or 'Low').
+                  If None, imports both Medium and Low.
+    """
+    label = priority if priority else "Medium/Low"
+    logger.info(f"Starting quarterly Salesforce company import ({label})")
     token = get_access_token()
     logger.info("Authenticated successfully")
 
+    if priority:
+        priority_filter = f"GOWT_Priority__c = '{priority}'"
+    else:
+        priority_filter = "GOWT_Priority__c IN ('Medium', 'Low')"
+
     soql = (
         "SELECT Name, fid5__c FROM Opportunity "
-        "WHERE GOWT_Priority__c IN ('Medium', 'Low') "
+        f"WHERE {priority_filter} "
         "AND StageName != '7. Killed' "
         "ORDER BY Name"
     )
@@ -460,11 +471,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--quarterly", action="store_true", help="Import GOWT Medium/Low non-killed opportunities")
     parser.add_argument("--slice", type=str, help="Slice to process, e.g. 1/4 for first of four slices")
+    parser.add_argument("--priority", type=str, choices=["Medium", "Low"], help="Filter to a single GOWT priority level")
     args = parser.parse_args()
     if args.quarterly:
         slice_index, total_slices = None, None
         if args.slice:
             slice_index, total_slices = (int(x) for x in args.slice.split("/"))
-        import_quarterly_companies(slice_index, total_slices)
+        import_quarterly_companies(slice_index, total_slices, priority=args.priority)
     else:
         import_companies_from_salesforce()

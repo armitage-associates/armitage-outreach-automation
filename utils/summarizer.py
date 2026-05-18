@@ -622,13 +622,14 @@ def add_posts_to_news_file(news_filepath, posts_data, message="", potential_acti
     return True
 
 
-def summarize_posts(news_filepath, posts_filepath):
+def summarize_posts(news_filepath, posts_filepath, filter_only=False):
     """
     Main function to process LinkedIn posts (JSON or CSV) and add growth indicators to news file.
 
     Args:
         news_filepath: Path to the company news JSON file (e.g., "data/output/OnQ Software.json")
         posts_filepath: Path to the LinkedIn posts file (e.g., "data/output/OnQ Software Linkedin Posts.json" or .csv)
+        filter_only: If True, only filter for growth signals — skip reachout message and actions generation.
 
     Returns:
         list: Growth posts on success
@@ -704,15 +705,15 @@ def summarize_posts(news_filepath, posts_filepath):
             company_data = json.load(f)
         company_name = company_data.get('company', 'the company')
 
-        # Only generate actions and reachout message if there's actual data
-        articles = company_data.get('articles', [])
         message = ""
         potential_actions = []
-        if growth_posts or articles:
-            message = generate_reachout_message(company_name, growth_posts, company_data)
-            potential_actions = generate_potential_actions(company_name, growth_posts, company_data)
-        else:
-            logger.info(f"No growth posts or articles for {company_name}, skipping action/message generation")
+        if not filter_only:
+            articles = company_data.get('articles', [])
+            if growth_posts or articles:
+                message = generate_reachout_message(company_name, growth_posts, company_data)
+                potential_actions = generate_potential_actions(company_name, growth_posts, company_data)
+            else:
+                logger.info(f"No growth posts or articles for {company_name}, skipping action/message generation")
 
         # Add to news file
         add_posts_to_news_file(news_filepath, growth_posts, message, potential_actions)
