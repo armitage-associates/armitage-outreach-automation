@@ -16,6 +16,7 @@ jiter==0.12.0
 lxml==6.0.2
 more-itertools==10.8.0
 openai==2.15.0
+openpyxl==3.1.5
 perplexityai==0.26.0
 platformdirs==4.5.1
 playwright==1.57.0
