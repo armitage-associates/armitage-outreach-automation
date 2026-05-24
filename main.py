@@ -159,6 +159,11 @@ def write_results_to_excel():
         bottom=Side(style='thin', color='D9D9D9'),
     )
 
+    for name in wb.sheetnames:
+        if name.endswith(" News") and name != sheet_name:
+            wb.remove(wb[name])
+            logger.info(f"Removed previous quarter sheet '{name}'")
+
     if sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         start_row = ws.max_row + 1
