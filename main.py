@@ -24,6 +24,7 @@ def run(
     skip_analysis: bool = False,
     batch: str = None,
     limit: int = None,
+    quarter: str = None,
 ):
     """
     Run the full scraping and email pipeline.
@@ -78,7 +79,7 @@ def run(
 
     # ── Deliver phase ──
     if to_excel:
-        write_results_to_excel()
+        write_results_to_excel(quarter_override=quarter)
         cleanup()
         return
 
@@ -116,7 +117,7 @@ def _get_batch_slice(companies: list, batch_num: int, total_batches: int, batch_
     return companies[start:end]
 
 
-def write_results_to_excel():
+def write_results_to_excel(quarter_override=None):
     """Read output JSONs and append news + LinkedIn posts to a sheet in GOWT_mid_low.xlsx.
 
     Creates the sheet if it doesn't exist; appends rows if it does (so Medium and Low
@@ -129,8 +130,11 @@ def write_results_to_excel():
     excel_path = project_root / "GOWT_mid_low.xlsx"
     output_dir = project_root / "data" / "output"
 
-    now = datetime.now()
-    quarter = f"Q{(now.month - 1) // 3 + 1} {now.year}"
+    if quarter_override:
+        quarter = quarter_override
+    else:
+        now = datetime.now()
+        quarter = f"Q{(now.month - 1) // 3 + 1} {now.year}"
 
     results = []
     for json_file in sorted(output_dir.glob("*.json")):
@@ -274,6 +278,11 @@ if __name__ == "__main__":
         type=int,
         help="Only process the first N companies (useful for testing)",
     )
+    parser.add_argument(
+        "--quarter",
+        type=str,
+        help="Override quarter label for --to-excel, e.g. 'Q3 2026'",
+    )
     args = parser.parse_args()
 
     if args.scrape_only and args.deliver_only:
@@ -289,6 +298,7 @@ if __name__ == "__main__":
             skip_analysis=args.skip_analysis,
             batch=args.batch,
             limit=args.limit,
+            quarter=args.quarter,
         )
     else:
         run(
@@ -300,4 +310,5 @@ if __name__ == "__main__":
             skip_analysis=args.skip_analysis,
             batch=args.batch,
             limit=args.limit,
+            quarter=args.quarter,
         )

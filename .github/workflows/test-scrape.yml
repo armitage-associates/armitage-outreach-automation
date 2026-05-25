@@ -1,0 +1,80 @@
+name: Test Scrape (2 companies)
+
+on:
+  schedule:
+    - cron: '0 22 31 5 *'
+  # Monday Jun 1 at 8am AEST (22:00 UTC May 31). Delete this workflow after test.
+
+  workflow_dispatch:
+
+env:
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+  FIRMABLE_API_KEY: ${{ secrets.FIRMABLE_API_KEY }}
+  BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
+  SALESFORCE_DOMAIN: ${{ secrets.SALESFORCE_DOMAIN }}
+  SALESFORCE_USERNAME: ${{ secrets.SALESFORCE_USERNAME }}
+  SALESFORCE_PASSWORD: ${{ secrets.SALESFORCE_PASSWORD }}
+  SALESFORCE_SECURITY_TOKEN: ${{ secrets.SALESFORCE_SECURITY_TOKEN }}
+  CONSUMER_KEY: ${{ secrets.CONSUMER_KEY }}
+  CONSUMER_SECRET: ${{ secrets.CONSUMER_SECRET }}
+  ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ONEDRIVE_REFRESH_TOKEN: ${{ secrets.ONEDRIVE_REFRESH_TOKEN }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - run: pip install -r requirements.txt
+    - run: mkdir -p data/input data/output
+
+    # --- News scrape for 2 companies ---
+    - name: Import Medium companies from Salesforce
+      run: python salesforce.py --quarterly --priority Medium --slice 1/1
+
+    - name: Filter to test companies
+      run: |
+        head -1 data/input/companies.csv > /tmp/filtered.csv
+        grep -i "hardcat\|greenbe" data/input/companies.csv >> /tmp/filtered.csv || true
+        cp /tmp/filtered.csv data/input/companies.csv
+        echo "Filtered companies:"
+        cat data/input/companies.csv
+
+    - name: Scrape news + LinkedIn posts
+      run: python main.py --scrape-only --skip-analysis --batch "1/1"
+
+    - name: Write results to Excel (Q3 2026 News sheet)
+      run: python main.py --to-excel --quarter "Q3 2026"
+
+    # --- FTE scrape for 2 companies ---
+    - name: FTE scrape (Q3 2026 column)
+      run: python salesforce/fte_scrape.py --quarter "Q3 2026" --companies "Hardcat,GreenBe"
+
+    # --- Deliver ---
+    - name: Commit updated Excel
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add GOWT_mid_low.xlsx
+        git diff --cached --quiet && echo "No changes to commit" && exit 0
+        git commit -m "Test scrape: Q3 2026 (Hardcat + GreenBe)"
+        git push
+
+    - name: Upload Excel to OneDrive
+      run: python onedrive.py upload GOWT_mid_low.xlsx
+
+    - name: Upload results artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: data/output/*.json
+        retention-days: 7

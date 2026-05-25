@@ -305,6 +305,7 @@ def main():
     parser.add_argument("--quarter", type=str, help="Quarter label, e.g. 'Q3 2026'. Auto-detected if omitted.")
     parser.add_argument("--dry-run", action="store_true", help="Scrape but don't write to Excel")
     parser.add_argument("--from-cache", type=str, help="Skip scraping, load results from a cached JSON file")
+    parser.add_argument("--companies", type=str, help="Comma-separated company names to filter (e.g. 'Hardcat Pty Ltd,GreenBe')")
     args = parser.parse_args()
 
     quarter = args.quarter or get_current_quarter()
@@ -320,6 +321,9 @@ def main():
             sys.exit(1)
 
         companies = load_companies()
+        if args.companies:
+            filter_names = {n.strip().lower() for n in args.companies.split(",")}
+            companies = [(name, slug) for name, slug in companies if name.lower() in filter_names]
         logger.info(f"Loaded {len(companies)} companies from {LINKEDIN_MAP_PATH}")
 
         results = scrape_employee_counts(companies, api_key)
