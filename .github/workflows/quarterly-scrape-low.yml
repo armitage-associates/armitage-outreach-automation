@@ -276,17 +276,9 @@ jobs:
           echo "SKIP_DELIVER=true" >> $GITHUB_ENV
         fi
 
-    - name: Download Excel from OneDrive
-      if: env.SKIP_DELIVER != 'true'
-      run: python onedrive.py download GOWT_mid_low.xlsx
-
     - name: Write results to Excel
       if: env.SKIP_DELIVER != 'true'
       run: python main.py --to-excel
-
-    - name: Upload Excel to OneDrive
-      if: env.SKIP_DELIVER != 'true'
-      run: python onedrive.py upload GOWT_mid_low.xlsx
 
     - name: Commit updated Excel
       if: env.SKIP_DELIVER != 'true'
@@ -303,6 +295,10 @@ jobs:
         ")
         git commit -m "Quarterly scrape (Low): ${QUARTER}"
         git push
+
+    - name: Upload Excel to OneDrive
+      if: env.SKIP_DELIVER != 'true'
+      run: python onedrive.py upload GOWT_mid_low.xlsx
 
     - name: Upload final results
       uses: actions/upload-artifact@v4
