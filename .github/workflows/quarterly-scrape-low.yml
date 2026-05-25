@@ -36,6 +36,10 @@ env:
   CONSUMER_KEY: ${{ secrets.CONSUMER_KEY }}
   CONSUMER_SECRET: ${{ secrets.CONSUMER_SECRET }}
   ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ONEDRIVE_REFRESH_TOKEN: ${{ secrets.ONEDRIVE_REFRESH_TOKEN }}
 
 jobs:
   import:
@@ -272,17 +276,17 @@ jobs:
           echo "SKIP_DELIVER=true" >> $GITHUB_ENV
         fi
 
+    - name: Download Excel from OneDrive
+      if: env.SKIP_DELIVER != 'true'
+      run: python onedrive.py download GOWT_mid_low.xlsx
+
     - name: Write results to Excel
       if: env.SKIP_DELIVER != 'true'
       run: python main.py --to-excel
 
-    - name: Upload final results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: results-${{ github.run_number }}
-        path: data/output/*.json
-        retention-days: 30
+    - name: Upload Excel to OneDrive
+      if: env.SKIP_DELIVER != 'true'
+      run: python onedrive.py upload GOWT_mid_low.xlsx
 
     - name: Commit updated Excel
       if: env.SKIP_DELIVER != 'true'
@@ -299,3 +303,11 @@ jobs:
         ")
         git commit -m "Quarterly scrape (Low): ${QUARTER}"
         git push
+
+    - name: Upload final results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: results-${{ github.run_number }}
+        path: data/output/*.json
+        retention-days: 30

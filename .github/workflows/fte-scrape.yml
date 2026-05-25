@@ -15,6 +15,10 @@ env:
   SALESFORCE_DOMAIN: ${{ secrets.SALESFORCE_DOMAIN }}
   CONSUMER_KEY: ${{ secrets.CONSUMER_KEY }}
   CONSUMER_SECRET: ${{ secrets.CONSUMER_SECRET }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ONEDRIVE_REFRESH_TOKEN: ${{ secrets.ONEDRIVE_REFRESH_TOKEN }}
 
 jobs:
   scrape:
@@ -29,6 +33,9 @@ jobs:
 
     - run: pip install requests openpyxl python-dotenv
 
+    - name: Download Excel from OneDrive
+      run: python onedrive.py download GOWT_mid_low.xlsx
+
     - name: Run FTE scrape
       run: |
         QUARTER_FLAG=""
@@ -36,6 +43,9 @@ jobs:
           QUARTER_FLAG="--quarter \"${{ github.event.inputs.quarter }}\""
         fi
         eval python salesforce/fte_scrape.py $QUARTER_FLAG
+
+    - name: Upload Excel to OneDrive
+      run: python onedrive.py upload GOWT_mid_low.xlsx
 
     - name: Commit updated Excel
       run: |
