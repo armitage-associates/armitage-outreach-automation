@@ -153,11 +153,13 @@ The system identifies these growth indicators:
 │   ├── input/                            # companies.csv, owner_mapping.json, contact_mapping.json
 │   ├── output/                           # {Company}.json reports
 │   └── fte_company_linkedin_map.csv      # LinkedIn slug mapping for FTE tracking
-├── GOWT_mid_low.xlsx                     # FTE tracking Excel (quarterly employee counts)
+├── GOWT_mid_low.xlsx                     # FTE tracking + quarterly news Excel (also on OneDrive)
+├── onedrive.py                           # OneDrive upload/download/delete via Microsoft Graph API
 ├── .github/
 │   └── workflows/
 │       ├── run-schedule.yml              # Monthly scraper pipeline
-│       ├── quarterly-scrape.yml          # Quarterly GOWT Medium/Low scrape (manual only)
+│       ├── quarterly-scrape-medium.yml   # Quarterly GOWT Medium scrape (5 slices)
+│       ├── quarterly-scrape-low.yml      # Quarterly GOWT Low scrape (8 slices, manual only)
 │       └── fte-scrape.yml                # Quarterly FTE tracking scrape
 └── tests/
     ├── test_owner_mapping.py             # Preview owner → company distribution
@@ -219,6 +221,15 @@ Fill in the following environment variables:
 | `SMTP_PASSWORD` | — | Gmail app password |
 | `SENDER_EMAIL` | `SMTP_USER` | From address |
 | `EMAIL_RECIPIENTS` | — | Fallback recipients (comma-separated) |
+
+**OneDrive (for quarterly Excel upload):**
+
+| Variable | Purpose |
+|----------|---------|
+| `AZURE_TENANT_ID` | Azure AD tenant ID |
+| `AZURE_CLIENT_ID` | App registration client ID |
+| `AZURE_CLIENT_SECRET` | App registration client secret |
+| `ONEDRIVE_REFRESH_TOKEN` | OAuth2 refresh token (re-run auth flow if expired) |
 
 **Optional flags:**
 
@@ -294,7 +305,7 @@ python main.py --scrape-only --skip-analysis --batch "1/8"
 python main.py --to-excel
 ```
 
-The `--skip-analysis` flag skips OpenAI analysis and contact scraping — only raw news articles (from Perplexity) and LinkedIn posts (from BrightData) are collected. The `--to-excel` flag reads output JSONs and writes them to a new sheet (e.g., "Q2 2026 News") in the Excel file.
+The `--skip-analysis` flag runs growth signal filtering (OpenAI) but skips reachout messages, actions, and contact scraping. The `--to-excel` flag reads output JSONs and writes them to a `{quarter} News` sheet in the Excel file (removes previous quarter's News sheet first).
 
 ### FTE Tracking
 
@@ -323,10 +334,11 @@ Three automated workflows:
 | Workflow | Schedule | Purpose |
 |----------|----------|---------|
 | `run-schedule.yml` | 25th of each month | Monthly GOWT High scrape pipeline |
-| `quarterly-scrape.yml` | Manual only (crons commented out) | Quarterly GOWT Medium/Low news + LinkedIn to Excel (8 slices) |
-| `fte-scrape.yml` | 1st of Jan/Apr/Jul/Oct | Quarterly FTE tracking (LinkedIn employee counts) |
+| `quarterly-scrape-medium.yml` | Days 1-5 of Jan/Apr/Jul/Oct (14:00 UTC) | Quarterly GOWT Medium news + LinkedIn to Excel (5 slices) |
+| `quarterly-scrape-low.yml` | Manual only (crons commented out) | Quarterly GOWT Low news + LinkedIn to Excel (8 slices) |
+| `fte-scrape.yml` | 1st of Jan/Apr/Jul/Oct (00:00 UTC) | Quarterly FTE tracking (LinkedIn employee counts) |
 
-All workflows support manual trigger via the Actions tab ("Run workflow").
+All workflows support manual trigger via the Actions tab ("Run workflow"). Quarterly workflows commit updated Excel to git and upload to OneDrive (`GOWT Data Scrape/` folder).
 
 **Setup:**
 

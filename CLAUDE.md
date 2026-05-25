@@ -116,7 +116,16 @@ Located in `salesforce/`:
 
 `.github/workflows/run-schedule.yml` — monthly scraper pipeline. Scrapes GOWT High companies with full analysis (OpenAI) and pushes to Salesforce.
 
-`.github/workflows/quarterly-scrape.yml` — quarterly scrape for GOWT Medium/Low. Scrapes news + LinkedIn posts **without AI analysis** (`--skip-analysis`), writes results to a new sheet in `GOWT_mid_low.xlsx` via `--to-excel`. Does not push to Salesforce. Schedule crons are commented out (manual trigger only).
+`.github/workflows/quarterly-scrape-medium.yml` — "Quarterly GOWT Medium Scrape"
+- Runs days 1-5 of Jan/Apr/Jul/Oct at 14:00 UTC (midnight AEST), one slice per day
+- Imports Medium companies from Salesforce, scrapes news (Perplexity) + LinkedIn posts (BrightData), filters for growth signals (OpenAI) but skips reachout/actions
+- Writes results to a `{quarter} News` sheet in `GOWT_mid_low.xlsx` (removes previous quarter's News sheet first, appends across days)
+- Commits to git, then uploads to OneDrive (`GOWT Data Scrape/` folder)
+
+`.github/workflows/quarterly-scrape-low.yml` — "Quarterly GOWT Low Scrape"
+- Same structure as Medium but for Low priority companies, 8 slices over days 6-13
+- Schedule crons are commented out (manual trigger only)
+- Appends to the same `{quarter} News` sheet created by the Medium workflow
 
 ### Salesforce API gotchas we hit
 
@@ -252,7 +261,9 @@ Quarterly LinkedIn employee count tracking for GOWT Medium/Low companies. Built 
 2. Scrape employee counts via BrightData LinkedIn Company Profile dataset (`gd_l1vikfnt1wgvvqz95w`) in batches of 50
 3. Insert a new quarter column in `GOWT_mid_low.xlsx` and compute quarter-over-quarter change
 
-The Salesforce baseline (`fid50__c`) is in column 6. Each quarterly scrape adds a new column before the Change columns. The Change columns always compare the latest quarter against the immediately preceding one (QoQ), not against the baseline.
+The Salesforce baseline (`fid50__c`) is in column 8 (H). Each quarterly scrape adds a new column before the Change columns. The Change columns always compare the latest quarter against the immediately preceding one (QoQ), not against the baseline.
+
+Column layout: A=Company Name, B=Location, C=Owner, D=Priority, E=Industry (SF), F=Website, G=LinkedIn URL, H=Baseline FTE (SF), I+=quarter columns, then Change and Change %.
 
 ### Script
 
@@ -270,7 +281,7 @@ Scrape results are always cached to `data/fte_scrape_Q{n}_{year}.json` so they c
 
 | File | Purpose |
 |---|---|
-| `GOWT_mid_low.xlsx` | FTE tracking Excel (sheet "FTE Tracking"). Columns: Company Name, Location, Industry (SF), Website, LinkedIn URL, Baseline FTE (SF), then one column per quarter, then Change and Change % |
+| `GOWT_mid_low.xlsx` | FTE tracking Excel. "FTE Tracking" sheet has employee counts; `{quarter} News` sheet has scraped news/posts with growth signals. Also uploaded to OneDrive after each update. |
 | `data/fte_company_linkedin_map.csv` | 853 companies with verified LinkedIn slugs. Columns: company_name, location, industry, website, linkedin_slug, linkedin_url, employees_sf, slug_source |
 | `data/fte_scrape_Q{n}_{year}.json` | Cached scrape results (slug → employee count) |
 
@@ -278,8 +289,42 @@ Scrape results are always cached to `data/fte_scrape_Q{n}_{year}.json` so they c
 
 `.github/workflows/fte-scrape.yml` — "Quarterly FTE Scrape"
 - Runs quarterly on the 1st of Jan/Apr/Jul/Oct at 00:00 UTC (and via `workflow_dispatch` with optional quarter override)
-- Scrapes all 853 companies, updates the Excel, and auto-commits `GOWT_mid_low.xlsx`
-- Uses secret `BRIGHTDATA_API_KEY` only (~$2.13 per run)
+- Scrapes all 853 companies, updates the Excel, commits to git, then uploads to OneDrive
+- Also refreshes the Owner column from Salesforce
+- Uses secrets `BRIGHTDATA_API_KEY`, `SALESFORCE_DOMAIN`, `CONSUMER_KEY`, `CONSUMER_SECRET`, plus OneDrive secrets (~$2.13 per run)
+
+## OneDrive Integration
+
+After each workflow updates `GOWT_mid_low.xlsx`, it commits to git (source of truth) then uploads a copy to OneDrive via Microsoft Graph API.
+
+### Setup
+
+- Azure AD app "Armitage CI OneDrive" (single tenant, delegated `Files.ReadWrite` permission)
+- Uses OAuth2 refresh token flow — no admin consent required
+- OneDrive folder: `GOWT Data Scrape/` in Arlen Cram's personal OneDrive
+
+### Script
+
+`onedrive.py` — upload, download, and delete files from the OneDrive folder.
+
+| Command | Purpose |
+|---|---|
+| `python onedrive.py upload GOWT_mid_low.xlsx` | Upload/overwrite file in OneDrive |
+| `python onedrive.py download GOWT_mid_low.xlsx` | Download file from OneDrive |
+| `python onedrive.py delete GOWT_mid_low.xlsx` | Delete file from OneDrive |
+
+### Environment variables / secrets
+
+| Variable | Value |
+|---|---|
+| `AZURE_TENANT_ID` | Armitage Associates tenant ID |
+| `AZURE_CLIENT_ID` | App registration client ID |
+| `AZURE_CLIENT_SECRET` | App registration client secret |
+| `ONEDRIVE_REFRESH_TOKEN` | OAuth2 refresh token (expires if unused for 90 days; re-run `get_token.py` to refresh) |
+
+### Caveat
+
+The refresh token expires after 90 days of inactivity. Since the FTE scrape runs on the 1st of each quarter month (~90 day intervals), it keeps the token alive. If it ever expires, re-run the device code / auth code flow to get a new one.
 
 ### LinkedIn slug sources
 
