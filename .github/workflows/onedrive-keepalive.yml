@@ -25,4 +25,4 @@ jobs:
         python-version: '3.12'
     - run: pip install requests python-dotenv
     - name: Ping OneDrive
-      run: python onedrive.py download GOWT_mid_low.xlsx /tmp/keepalive_test.xlsx
+      run: python onedrive.py download GOWT_mid_low.xlsx --output /tmp/keepalive_test.xlsx
