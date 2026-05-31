@@ -1,8 +1,8 @@
 name: Test Scrape (2 companies)
 
 on:
-  schedule:
-    - cron: '0 22 31 5 *'
+#   schedule:
+#     - cron: '0 22 31 5 *'
   # Monday Jun 1 at 8am AEST (22:00 UTC May 31). Delete this workflow after test.
 
   workflow_dispatch:
