@@ -2,7 +2,8 @@
 .env
 cookies.json
 .linkedin_profile/
-data
+data/*
+!data/fte_company_linkedin_map.csv
 __pycache__/
 data/dump/*
 .claude
