@@ -1,169 +1,60 @@
-# Armitage Outreach Automation
+# Armitage GOWT Intelligence
 
-Automated growth intelligence pipeline for private equity analysts. Imports target companies from Salesforce, scrapes news and LinkedIn for growth signals, generates AI-powered analysis and outreach recommendations, then delivers results via email digests and Salesforce CRM sync.
+LinkedIn news monitoring and FTE tracking for GOWT portfolio companies. Scrapes company LinkedIn posts and employee counts, writes results to Excel, and uploads to OneDrive.
 
 ## How It Works
 
-The pipeline runs in six stages, orchestrated by `main.py`:
-
 ```
-                         Salesforce CRM
-                        ┌──────────────┐
-                        │  Dashboards  │
-                        │  "GOWT High" │
-                        └──────┬───────┘
-                               │
-                    ┌──────────▼──────────┐
-              1.    │  Import Companies   │
-                    │  + Owner Mapping    │
-                    │  + Contact Mapping  │
-                    └──────────┬──────────┘
-                               │
-                    ┌──────────▼──────────┐
-              2.    │  Enrich Companies   │
-                    │  SerpAPI + Firmable │
-                    └──────────┬──────────┘
-                               │
-    ┌──────────────────────────┼──────────────────────────┐
-    │                          │                          │
-┌───▼──────────────┐  ┌────────▼──────────┐  ┌────────────▼─────────┐
-│  3a. Scrape News │  │ 3b. Scrape Co.    │  │ 3c. Scrape Contact   │
-│  Perplexity AI   │  │ LinkedIn Posts    │  │ LinkedIn Posts       │
-│                  │  │ API → Req → Pwrt  │  │ SerpAPI + BrightData │
-└───┬──────────────┘  └────────┬──────────┘  └────────────┬─────────┘
-    │                          │                          │
-    └──────────────────────────┼──────────────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-              4.    │   AI Analysis       │
-                    │   OpenAI GPT-4o     │
-                    │   Growth signals    │
-                    │   Contact activity  │
-                    │   Reachout message  │
-                    │   Action items      │
-                    └──────────┬──────────┘
-                               │
-              ┌────────────────┼────────────────┐
-              │                │                │
-   ┌──────────▼────┐  ┌────────▼──────┐  ┌──────▼────┐
-   │ 5a. Salesforce│  │ 5b. Email     │  │ 5c. Clean │
-   │ Push to CRM   │  │ Owner Digests │  │ up files  │
-   └───────────────┘  └───────────────┘  └───────────┘
+   Salesforce                BrightData               Excel + OneDrive
+┌──────────────┐         ┌────────────────┐         ┌──────────────────┐
+│ Query GOWT   │──────►  │ SERP: resolve  │──────►  │ GOWT_high.xlsx   │
+│ High/Medium  │         │ LinkedIn slugs │         │ (per-company tabs)│
+│ companies    │         │                │         │                  │
+│              │         │ LinkedIn API:  │──────►  │ GOWT_mid_low.xlsx│
+│              │         │ scrape posts   │         │ (combined tab)   │
+└──────────────┘         │                │         │                  │
+                         │ LinkedIn API:  │──────►  │ GOWT_mid_low.xlsx│
+                         │ employee counts│         │ (FTE Tracking)   │
+                         └────────────────┘         └──────────────────┘
 ```
 
-### Stage 1 — Import Companies
+## Workflows
 
-Authenticates with Salesforce (OAuth2 client credentials), reads all dashboards, and extracts company names and locations from the target reports ("GOWT Ultra High's", "GOWT High's"). Queries opportunity owner emails and primary contact names via SOQL (`OpportunityContactRole` where `IsPrimary = true`).
+| Workflow | Schedule | What it does |
+|----------|----------|-------------|
+| **Monthly High Scrape** | 28th of every month, midnight AEST | Scrapes LinkedIn posts (past 30 days) for ~24 GOWT High companies. Writes per-company tabs to `GOWT_high.xlsx`. |
+| **Quarterly Medium Scrape** | Days 1-5 of Jan/Apr/Jul/Oct, midnight AEST | Scrapes LinkedIn posts (past 90 days) for ~273 GOWT Medium companies. Writes combined tab to `GOWT_mid_low.xlsx`. |
+| **Quarterly FTE Scrape** | 6th of Jan/Apr/Jul/Oct, midnight AEST | Scrapes LinkedIn employee counts for 853 companies. Adds new quarter column to `GOWT_mid_low.xlsx` with QoQ change. |
+| **Daily Funnel Update** | Daily (currently manual) | Updates Salesforce origination funnel metrics and report date ranges. |
+| **OneDrive Keepalive** | Manual (~every 2 months) | Pings OneDrive to keep OAuth refresh token alive. |
 
-Produces:
-- `data/input/companies.csv` — target company list
-- `data/input/owner_mapping.json` — maps owner emails to their companies
-- `data/input/contact_mapping.json` — maps company names to primary contact names
-
-### Stage 2 — Enrich Companies
-
-For each company:
-1. **SerpAPI** — Google search to find the company's website domain
-2. **Firmable API** — enriches with HQ location, LinkedIn company ID, and industry
-
-Output: `company_info` dict used by all subsequent scrapers.
-
-### Stage 3a — Scrape News
-
-Uses **Perplexity AI** (sonar-pro model) with web search to find recent news articles. Searches the company's own website plus Australian business media (AFR, SmartCompany, StartupDaily, etc.) over the last 30 days.
-
-Output: `data/output/{Company}.json` with articles (headline, date, summary, growth type, source URL).
-
-### Stage 3b — Scrape Company LinkedIn
-
-Three-tier fallback for LinkedIn company posts:
-
-| Tier | Method | Details |
-|------|--------|---------|
-| 1 | **BrightData API** | Triggers async scrape, polls until complete, downloads JSON snapshot. Primary method. |
-| 2 | **HTTP Requests** | Direct HTTP with anti-bot headers, user-agent rotation, random delays. Extracts posts from page source. |
-| 3 | **Playwright** | Headless browser with stealth plugin. Randomized fingerprints, bezier mouse movements, DuckDuckGo search to reach company page. |
-
-Each tier is tried in order. Tiers 2 and 3 are opt-in via environment variables.
-
-### Stage 3c — Scrape Contact LinkedIn Activity
-
-Scrapes the primary contact person's individual LinkedIn posts (past 30 days):
-
-1. **SerpAPI** — Google searches `"{contact name} {company} LinkedIn"` and picks the first `linkedin.com/in/` result
-2. **BrightData** — triggers an async profile scrape using `discover_by=profile_url` (same dataset API as company scraping, different discovery mode)
-3. **OpenAI GPT-4o-mini** — summarizes each post into a one-sentence summary with date and topic category
-
-If no primary contact exists, no LinkedIn URL is found, or the person has no recent posts, the pipeline continues and pushes a "no recent activity" message to Salesforce.
-
-### Stage 4 — AI Analysis
-
-Sends all scraped data to **OpenAI GPT-4o-mini** for:
-- **Growth signal detection** — filters posts/articles for 9 growth indicator types
-- **LinkedIn reachout message** — personalized, conversational, under 80 words
-- **Potential actions** — 4-6 relationship-building activities (coffee, golf, introductions, etc.)
-
-Merges everything into the final company JSON file.
-
-### Stage 5 — Delivery
-
-- **Salesforce** — updates Opportunity records with `Growth_News__c` (news + company posts), `Growth_Actions__c` (actions + outreach message), and `P__c` (contact LinkedIn activity, formatted HTML)
-- **Email** — sends per-owner HTML digests via Gmail SMTP (each analyst gets only their companies)
-- **Cleanup** — deletes all intermediate files from `data/input/` and `data/output/`
-
-## Growth Signals
-
-The system identifies these growth indicators:
-
-- Awards and recognition
-- Business expansion
-- New hires / team growth
-- Partnerships and collaborations
-- Patents and innovations
-- Financial success / funding
-- Product launches
-- Market expansion
-- Client acquisitions
+All workflows commit to git and upload to OneDrive after each Excel update.
 
 ## Project Structure
 
 ```
-├── main.py                               # Pipeline entry point (--company, --no-email)
-├── scraper.py                            # Per-company scrape orchestration
-├── salesforce.py                         # Salesforce import + push
-├── company/
-│   ├── get_company_info.py               # Aggregates SERP + Firmable data
-│   ├── serp_company_url.py               # Google Search via BrightData SERP API
-│   ├── serp_contact_url.py              # Contact LinkedIn search via BrightData SERP API
-│   └── firmable_data.py                  # Firmable API enrichment
-├── scrapers/
-│   ├── perplexity_scraper.py             # News scraping (Perplexity AI)
-│   ├── linkedin_scraper_api.py           # Company LinkedIn via BrightData API
-│   ├── linkedin_contact_scraper.py      # Contact LinkedIn via BrightData API
-│   ├── linkedin_scraper_requests.py      # LinkedIn via HTTP requests
-│   └── linkedin_scraper_playwright.py    # LinkedIn via browser automation
-├── utils/
-│   ├── summarizer.py                     # OpenAI analysis, reachout, actions, contact summaries
-│   └── email_client.py                   # HTML email formatting + SMTP
+├── linkedin_news_scrape.py               # LinkedIn news scrape (High monthly + Medium quarterly)
+├── salesforce.py                         # Salesforce OAuth + REST API client
+├── onedrive.py                           # OneDrive upload/download/delete
 ├── salesforce/
 │   ├── fte_scrape.py                     # Quarterly FTE tracking (LinkedIn employee counts)
-│   ├── sf_funnel_update.py               # Daily funnel metric upsert
-│   └── sf_update_report_dates.py         # Daily report date range roll
+│   ├── sf_funnel_update.py               # Origination funnel metric upsert
+│   ├── sf_update_report_dates.py         # Report date range roll
+│   ├── sf_query.py                       # Ad-hoc SOQL query tool
+│   ├── export_opportunities_for_dedup.py # Dedup export for Tecala
+│   └── ...                               # Other Salesforce utilities
 ├── data/
-│   ├── input/                            # companies.csv, owner_mapping.json, contact_mapping.json
-│   ├── output/                           # {Company}.json reports
-│   └── fte_company_linkedin_map.csv      # LinkedIn slug mapping for FTE tracking
-├── GOWT_mid_low.xlsx                     # FTE tracking + quarterly news Excel (also on OneDrive)
-├── onedrive.py                           # OneDrive upload/download/delete via Microsoft Graph API
-├── .github/
-│   └── workflows/
-│       ├── run-schedule.yml              # Monthly scraper pipeline
-│       ├── quarterly-scrape-medium.yml   # Quarterly GOWT Medium scrape (5 slices)
-│       ├── quarterly-scrape-low.yml      # Quarterly GOWT Low scrape (8 slices, manual only)
-│       └── fte-scrape.yml                # Quarterly FTE tracking scrape
-└── tests/
-    ├── test_owner_mapping.py             # Preview owner → company distribution
-    └── test_contact_pipeline.py          # End-to-end contact pipeline test
+│   ├── fte_company_linkedin_map.csv      # LinkedIn slug mapping (853 companies)
+│   └── fte_scrape_Q*.json               # Cached FTE scrape results
+├── GOWT_high.xlsx                        # High company LinkedIn news (monthly)
+├── GOWT_mid_low.xlsx                     # Medium FTE tracking + quarterly news
+├── .github/workflows/
+│   ├── monthly-scrape-high.yml           # Monthly GOWT High scrape
+│   ├── quarterly-scrape-medium-v2.yml    # Quarterly GOWT Medium scrape
+│   ├── fte-scrape.yml                    # Quarterly FTE tracking
+│   ├── funnel-update.yml                 # Daily origination funnel
+│   └── onedrive-keepalive.yml            # OneDrive token refresh
+└── requirements.txt
 ```
 
 ## Setup
@@ -171,254 +62,116 @@ The system identifies these growth indicators:
 ### Prerequisites
 
 - Python 3.12+
-- Playwright browsers (only if using the Playwright fallback)
+- GitHub repository with Actions enabled
 
 ### Installation
 
 ```bash
-git clone <your-repo-url>
-cd armitage-automation
 pip install -r requirements.txt
-
-# Only if using Playwright fallback
-playwright install --with-deps chromium
 ```
 
 ### Configuration
 
-```bash
-cp .env.sample .env
-```
+Set these environment variables (or add to `.env`):
 
-Fill in the following environment variables:
-
-**Core APIs (required):**
+**Required:**
 
 | Variable | Service | Purpose |
 |----------|---------|---------|
-| `OPENAI_API_KEY` | OpenAI | Post analysis and reachout generation (GPT-4o-mini) |
-| `PERPLEXITY_API_KEY` | Perplexity AI | News scraping (sonar-pro model) |
-| `FIRMABLE_API_KEY` | Firmable | Company enrichment (HQ, LinkedIn ID, industry) |
-| `BRIGHTDATA_API_KEY` | BrightData | LinkedIn post scraping and Google Search (SERP API) |
+| `BRIGHTDATA_API_KEY` | BrightData | LinkedIn posts, employee counts, SERP search |
+| `SALESFORCE_DOMAIN` | Salesforce | Instance URL |
+| `CONSUMER_KEY` | Salesforce | OAuth client credentials |
+| `CONSUMER_SECRET` | Salesforce | OAuth client credentials |
 
-**Salesforce:**
-
-| Variable | Purpose |
-|----------|---------|
-| `SALESFORCE_DOMAIN` | Instance URL (e.g., `https://yourorg.my.salesforce.com`) |
-| `SALESFORCE_USERNAME` | Login email |
-| `SALESFORCE_PASSWORD` | Password |
-| `SALESFORCE_SECURITY_TOKEN` | Security token |
-| `CONSUMER_KEY` | Connected App consumer key |
-| `CONSUMER_SECRET` | Connected App consumer secret |
-| `ACCESS_TOKEN` | OAuth2 access token |
-
-**Email:**
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `SMTP_USER` | — | Gmail address |
-| `SMTP_PASSWORD` | — | Gmail app password |
-| `SENDER_EMAIL` | `SMTP_USER` | From address |
-| `EMAIL_RECIPIENTS` | — | Fallback recipients (comma-separated) |
-
-**OneDrive (for quarterly Excel upload):**
+**OneDrive upload:**
 
 | Variable | Purpose |
 |----------|---------|
 | `AZURE_TENANT_ID` | Azure AD tenant ID |
 | `AZURE_CLIENT_ID` | App registration client ID |
 | `AZURE_CLIENT_SECRET` | App registration client secret |
-| `ONEDRIVE_REFRESH_TOKEN` | OAuth2 refresh token (re-run auth flow if expired) |
-
-**Optional flags:**
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `USE_REQUESTS_FALLBACK` | `true` | Enable HTTP-based LinkedIn scraper as Tier 2 |
-| `USE_PLAYWRIGHT_FALLBACK` | `false` | Enable Playwright browser scraper as Tier 3 |
+| `ONEDRIVE_REFRESH_TOKEN` | OAuth2 refresh token (expires after 90 days of inactivity) |
 
 ## Usage
 
-### Full Pipeline
+### LinkedIn News Scrape
 
 ```bash
-python main.py
+# Full run — High companies (monthly)
+python linkedin_news_scrape.py --priority high
+
+# Full run — Medium companies (quarterly)
+python linkedin_news_scrape.py --priority medium
+
+# Test with 2 companies, don't write Excel
+python linkedin_news_scrape.py --priority high --limit 2 --dry-run
+
+# Multi-job workflow (used by GitHub Actions)
+python linkedin_news_scrape.py --priority medium --import-only --slice 1/5
+python linkedin_news_scrape.py --priority medium --scrape-only --batch 1/11
+python linkedin_news_scrape.py --priority medium --deliver-only
 ```
-
-Runs all stages: Salesforce import, scraping (news + company LinkedIn + contact LinkedIn), AI analysis, Salesforce push, email delivery, and cleanup.
-
-### Single Company (Testing)
-
-```bash
-# Run the full pipeline for one company only
-python main.py --company "OnQ Software"
-
-# Single company, skip emails
-python main.py --company "OnQ Software" --no-email
-```
-
-Imports from Salesforce, looks up the company in `companies.csv` (case-insensitive match), runs the full scrape/analysis/push pipeline for just that company. No inter-company delay.
-
-### Contact Pipeline Test
-
-```bash
-# Run all 5 steps end-to-end
-python tests/test_contact_pipeline.py
-
-# Test a single step with mock data for upstream steps
-python tests/test_contact_pipeline.py --step search
-python tests/test_contact_pipeline.py --step scrape
-python tests/test_contact_pipeline.py --step push
-
-# Override sample companies
-python tests/test_contact_pipeline.py --companies "OnQ Software" "Axcelerate"
-
-# Keep intermediate files for inspection
-python tests/test_contact_pipeline.py --no-cleanup
-```
-
-Tests the contact-specific pipeline: Salesforce contact lookup, SerpAPI LinkedIn search, BrightData profile scrape, OpenAI summarization, and Salesforce push to `P__c`.
-
-### Individual Components
-
-```bash
-# Scrape all companies from CSV
-python scraper.py
-
-# Import companies from Salesforce only
-python salesforce.py
-
-# Send digest email from existing output data
-python utils/email_client.py recipient@example.com
-```
-
-### Quarterly Scrape (News + LinkedIn to Excel)
-
-Scrape news and LinkedIn posts for GOWT Medium/Low companies without AI analysis, and write results to `GOWT_mid_low.xlsx`.
-
-```bash
-# Scrape without analysis (used by quarterly workflow)
-python main.py --scrape-only --skip-analysis --batch "1/8"
-
-# Write scraped results to Excel
-python main.py --to-excel
-```
-
-The `--skip-analysis` flag runs growth signal filtering (OpenAI) but skips reachout messages, actions, and contact scraping. The `--to-excel` flag reads output JSONs and writes them to a `{quarter} News` sheet in the Excel file (removes previous quarter's News sheet first).
 
 ### FTE Tracking
 
-Track LinkedIn employee counts for GOWT Medium/Low companies quarter-over-quarter.
-
 ```bash
-# Auto-detect current quarter, scrape and update Excel
+# Auto-detect quarter, scrape and update Excel
 python salesforce/fte_scrape.py
 
 # Specify quarter
 python salesforce/fte_scrape.py --quarter "Q3 2026"
 
-# Scrape but don't write to Excel
-python salesforce/fte_scrape.py --dry-run
-
-# Replay from cached results (skip scraping)
+# Replay from cached results
 python salesforce/fte_scrape.py --from-cache data/fte_scrape_Q2_2026.json
 ```
 
-Scrapes 853 companies via BrightData LinkedIn Company Profile API, inserts a new quarter column in `GOWT_mid_low.xlsx`, and computes quarter-over-quarter change (Change and Change %). Results are cached to `data/fte_scrape_Q{n}_{year}.json`.
+## Excel Output
 
-### GitHub Actions (Recommended)
+### GOWT_high.xlsx (monthly)
 
-Three automated workflows:
+24 tabs, one per company. Each tab:
 
-| Workflow | Schedule | Purpose |
-|----------|----------|---------|
-| `run-schedule.yml` | 25th of each month | Monthly GOWT High scrape pipeline |
-| `quarterly-scrape-medium.yml` | Days 1-5 of Jan/Apr/Jul/Oct (14:00 UTC) | Quarterly GOWT Medium news + LinkedIn to Excel (5 slices) |
-| `quarterly-scrape-low.yml` | Manual only (crons commented out) | Quarterly GOWT Low news + LinkedIn to Excel (8 slices) |
-| `fte-scrape.yml` | 1st of Jan/Apr/Jul/Oct (00:00 UTC) | Quarterly FTE tracking (LinkedIn employee counts) |
+| Date Posted | Title | Post Text |
+|-------------|-------|-----------|
+| 2026-06-15 | ... | ... |
 
-All workflows support manual trigger via the Actions tab ("Run workflow"). Quarterly workflows commit updated Excel to git and upload to OneDrive (`GOWT Data Scrape/` folder).
+Entire workbook replaced each month.
 
-**Setup:**
+### GOWT_mid_low.xlsx
 
-1. Push the repo to GitHub
-2. Go to Settings > Secrets and variables > Actions
-3. Add all `.env` variables as repository secrets
-4. The workflow runs on `ubuntu-latest` with Python 3.12
+**FTE Tracking sheet** — employee counts with quarterly columns and QoQ change.
 
-Output JSON files are uploaded as artifacts with 30-day retention.
+**{Quarter} News sheet** — combined LinkedIn posts for all Medium companies:
 
-## Output Format
+| Company | Location | LinkedIn Posts | LinkedIn URL |
+|---------|----------|---------------|-------------|
+| ... | ... | [date] post text | ... |
 
-Each company produces a JSON report in `data/output/`:
-
-```json
-{
-  "company": "OnQ Software",
-  "articles": [
-    {
-      "headline": "OnQ wins excellence award",
-      "date": "09/09/2025",
-      "summary": "OnQ Software recognised for innovation...",
-      "growth_type": "awards",
-      "source_url": "https://..."
-    }
-  ],
-  "posts": [
-    {
-      "summary": "Announced launch of AI assistant Sophia...",
-      "growth_type": "product_launch",
-      "date": "17/01/2026 - 3w"
-    }
-  ],
-  "message": "Hi [Name], I noticed OnQ's recent launch of Sophia...",
-  "potential_actions": [
-    "Invite founders for a round of golf to discuss growth plans",
-    "Arrange a coffee meeting to explore partnership opportunities"
-  ],
-  "linkedin_url": "https://www.linkedin.com/company/onqsoftware/posts/",
-  "contact_name": "Nick Gannoulis",
-  "contact_posts": [
-    {
-      "summary": "Shared insights on laboratory management trends for 2026",
-      "date": "03/02/2026 - 1w",
-      "topic": "industry insight"
-    }
-  ]
-}
-```
-
-When no primary contact or no recent posts: `"contact_name": null, "contact_posts": []`.
+News sheet replaced each quarter.
 
 ## External Services
 
-| Service | Model / API | Role |
-|---------|-------------|------|
-| [Salesforce](https://salesforce.com) | REST API v62.0 | Company import and results push |
-| [Firmable](https://firmable.com) | Company API | Enrich with LinkedIn ID, industry, HQ |
-| [Perplexity AI](https://perplexity.ai) | sonar-pro | News article discovery |
-| [BrightData](https://brightdata.com) | Dataset API + SERP API | LinkedIn post scraping and Google Search |
-| [OpenAI](https://openai.com) | gpt-4o-mini | Growth analysis, reachout, actions |
-| Gmail | SMTP (587/TLS) | Email delivery |
+| Service | Purpose | Cost estimate |
+|---------|---------|--------------|
+| BrightData SERP | Resolve LinkedIn company slugs | ~$0.003/query |
+| BrightData LinkedIn Posts | Scrape company posts | ~$0.05/company |
+| BrightData LinkedIn Company Profile | Employee counts (FTE) | ~$0.0025/company |
+| Salesforce | Company list (SOQL queries) | Included |
+| OneDrive | Excel file backup | Included |
 
-## Error Handling
+## Troubleshooting
 
-The pipeline is designed for graceful degradation:
+### BrightData: "Customer is not active"
+Account has expired or run out of credit. Log into https://brightdata.com/cp to check.
 
-| Failure | Impact | Recovery |
-|---------|--------|----------|
-| Perplexity API down | No news articles | Continues with LinkedIn data |
-| All LinkedIn scrapers fail | No posts | Generates actions from news only |
-| Contact not in Salesforce | No contact mapping | Pushes "no primary contact" to `P__c` |
-| Contact LinkedIn URL not found | No contact posts | Pushes "no recent activity" to `P__c` |
-| Contact scrape returns no posts | No contact summaries | Pushes "no recent activity" to `P__c` |
-| SERP search returns nothing | Company skipped | Moves to next company |
-| Firmable API fails | Reduced enrichment | Uses defaults, continues |
-| Salesforce auth fails | No CRM sync | Reports still emailed |
-| SMTP fails | Email not sent | Logged, pipeline completes |
+### Salesforce: Authentication failure
+Update `CONSUMER_KEY` and `CONSUMER_SECRET` in GitHub Secrets.
 
-Between companies, the pipeline waits 5 minutes to respect API rate limits. Individual company failures do not stop the pipeline. The contact pipeline is fully wrapped in error handling — any failure at any step logs a warning and continues.
+### OneDrive: Refresh token expired
+The token expires after 90 days of inactivity. Re-run the auth flow to get a new one. The keepalive workflow prevents this if run every ~2 months.
+
+### GitHub Actions: Workflow did not run
+GitHub skips scheduled workflows if the repo has no activity for 60 days. Make a commit or trigger manually.
 
 ## License
 
