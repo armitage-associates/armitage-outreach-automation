@@ -1,8 +1,8 @@
 name: OneDrive Token Keepalive
 
 on:
-  schedule:
-    - cron: '0 0 10 */2 *'
+#   schedule:
+#     - cron: '0 0 10 */2 *'
   # Runs on the 10th of every other month (Jan, Mar, May, Jul, Sep, Nov) — ~60 day intervals.
   # Keeps the OneDrive refresh token alive (expires after 90 days of inactivity).
 
