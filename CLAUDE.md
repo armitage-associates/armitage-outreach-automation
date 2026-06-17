@@ -45,7 +45,8 @@ All reports are type `Opportunity`. The 4 LTM pie chart reports use `standardDat
 | `fid45__c` | Reason for kill for dead deals | Picklist: Too small, Business model, Unsuccessful outreach, No need for capital, Armitage not right partner, Took other investors, etc. |
 | `fid48__c` | Status reached for dead deals | Picklist: Introduction pending, Did not connect, Immediate kill, Initial discussions, Initial DD, Indicative offer, Term sheet |
 | `Transaction_type__c` | Transaction type | — |
-| `Growth_News__c`, `Growth_Actions__c`, `P__c` | Populated by the monthly scraper pipeline |
+| `Growth_News__c`, `Growth_Actions__c`, `P__c` | Legacy fields (previously populated by old scraper pipeline, no longer updated) |
+| `GOWT_Priority__c` | GOWT Priority | Picklist: `High`, `Medium`, `Low` — used to filter companies for LinkedIn news scraping |
 
 ### Custom Object: Funnel_Metric__c
 
@@ -114,18 +115,17 @@ Located in `salesforce/`:
   2. `python salesforce/sf_update_report_dates.py`
 - Uses secrets `SALESFORCE_DOMAIN`, `CONSUMER_KEY`, `CONSUMER_SECRET` (same as the monthly scraper workflow)
 
-`.github/workflows/run-schedule.yml` — monthly scraper pipeline. Scrapes GOWT High companies with full analysis (OpenAI) and pushes to Salesforce.
+`.github/workflows/monthly-scrape-high.yml` — "Monthly GOWT High Scrape"
+- Runs on the 1st of every month at 14:00 UTC (midnight AEST)
+- Queries Salesforce for ~24 GOWT High (Platform) companies, resolves LinkedIn slugs via BrightData SERP, scrapes LinkedIn posts from the past 30 days
+- Writes per-company tabs to `GOWT_high.xlsx` (replaces entire workbook each month)
+- Commits to git, then uploads to OneDrive
 
-`.github/workflows/quarterly-scrape-medium.yml` — "Quarterly GOWT Medium Scrape"
+`.github/workflows/quarterly-scrape-medium-v2.yml` — "Quarterly GOWT Medium Scrape"
 - Runs days 1-5 of Jan/Apr/Jul/Oct at 14:00 UTC (midnight AEST), one slice per day
-- Imports Medium companies from Salesforce, scrapes news (Perplexity) + LinkedIn posts (BrightData), filters for growth signals (OpenAI) but skips reachout/actions
-- Writes results to a `{quarter} News` sheet in `GOWT_mid_low.xlsx` (removes previous quarter's News sheet first, appends across days)
-- Commits to git, then uploads to OneDrive (`GOWT Data Scrape/` folder)
-
-`.github/workflows/quarterly-scrape-low.yml` — "Quarterly GOWT Low Scrape"
-- Same structure as Medium but for Low priority companies, 8 slices over days 6-13
-- Schedule crons are commented out (manual trigger only)
-- Appends to the same `{quarter} News` sheet created by the Medium workflow
+- Queries Salesforce for ~273 GOWT Medium companies, resolves LinkedIn slugs, scrapes LinkedIn posts from the past 90 days
+- Writes results to a combined `{quarter} News` sheet in `GOWT_mid_low.xlsx` (removes previous quarter's News sheet, appends across days)
+- Multi-job: import → 3 parallel scrape jobs → deliver (commit + OneDrive upload)
 
 ### Salesforce API gotchas we hit
 
@@ -165,8 +165,7 @@ Located in `salesforce/`:
 
 ### Files not to touch unless the user asks
 
-- `main.py`, `scraper.py`, `company/*`, `scrapers/*`, `utils/*` — the monthly outreach automation pipeline, unrelated to Origination Charts
-- `salesforce.py` — shared Salesforce client; has the OAuth flow and helpers that the Origination Charts scripts import
+- `salesforce.py` — shared Salesforce client; has the OAuth flow and helpers that all scripts import
 - `data/origination_dashboard_backup.json` — pre-any-edits snapshot of the Origination weekly dashboard
 
 ### Two relevant Excel files
@@ -175,6 +174,55 @@ Located in `salesforce/`:
 - `data/piechart_metrics.xlsx` — source of truth for the 4 pie charts (Pivot sheet has the breakdowns; Deal list export has ~7375 rows)
 
 Both Excel files were frozen snapshots. Numbers in our live dashboards will drift as Salesforce data changes, but the **logic** matches exactly.
+
+## LinkedIn News Scrape
+
+Scrapes LinkedIn company posts for GOWT High and Medium companies. Built in June 2026, replacing the old multi-source pipeline (Perplexity + OpenAI + Salesforce push).
+
+### How it works
+
+1. Query Salesforce for GOWT companies: `StageName = '8. Good opportunity wrong timing' AND GOWT_Priority__c = '{priority}' AND Transaction_type__c != '8. Portfolio company bolt-on'`
+2. Resolve LinkedIn company slugs via BrightData SERP (searches `"{company} site:linkedin.com/company"`)
+3. Scrape LinkedIn posts via BrightData dataset `gd_lyy3tktm25m4avu764` with configurable date range
+4. Write to Excel and upload to OneDrive
+
+### Company counts (as of June 2026)
+
+| Priority | Count | Scrape frequency | Date range |
+|---|---|---|---|
+| High | 24 | Monthly (1st of every month) | Past 30 days |
+| Medium | 273 | Quarterly (days 1-5 of quarter months) | Past 90 days |
+
+### Script
+
+`linkedin_news_scrape.py` — main entry point for both High and Medium scrapes.
+
+| Flag | Purpose |
+|---|---|
+| `--priority high\|medium` | Required. Which companies to scrape |
+| `--slice 1/5` | For Medium: which slice of companies to process (multi-day workflow) |
+| `--batch 1/3` | For parallel jobs within a slice |
+| `--quarter "Q3 2026"` | Override quarter label (Medium) |
+| `--month "Jun 2026"` | Override month label (High) |
+| `--limit N` | Only process first N companies (testing) |
+| `--dry-run` | Scrape but don't write Excel |
+| `--import-only` | Just query SF + resolve slugs, write CSV |
+| `--scrape-only` | Read CSV, scrape, write output JSONs |
+| `--deliver-only` | Read output JSONs, write Excel, upload OneDrive |
+
+### Excel output
+
+| File | Structure | Replaced |
+|---|---|---|
+| `GOWT_high.xlsx` | One tab per company (24 tabs). Columns: Date Posted, Title, Post Text | Every month |
+| `GOWT_mid_low.xlsx` | Combined `{quarter} News` tab. Columns: Company, Location, LinkedIn Posts, LinkedIn URL | Every quarter |
+
+### External services used
+
+- **Salesforce** — company list (SOQL query)
+- **BrightData SERP** — LinkedIn slug resolution (~$0.003/query)
+- **BrightData LinkedIn Posts** — dataset `gd_lyy3tktm25m4avu764` (~$0.05/company)
+- **OneDrive** — Excel upload after every update
 
 ## Opportunity dedup export
 
@@ -295,7 +343,7 @@ Scrape results are always cached to `data/fte_scrape_Q{n}_{year}.json` so they c
 
 ## OneDrive Integration
 
-After each workflow updates `GOWT_mid_low.xlsx`, it commits to git (source of truth) then uploads a copy to OneDrive via Microsoft Graph API.
+After each workflow updates `GOWT_mid_low.xlsx` or `GOWT_high.xlsx`, it commits to git (source of truth) then uploads a copy to OneDrive via Microsoft Graph API.
 
 ### Setup
 
