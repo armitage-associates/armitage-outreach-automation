@@ -1,8 +1,8 @@
 name: Monthly GOWT High Scrape
 
 on:
-  schedule:
-    - cron: '0 14 28 * *'
+#   schedule:
+#     - cron: '0 14 28 * *'
   # 28th of every month at midnight AEST (14:00 UTC)
 
   workflow_dispatch:
