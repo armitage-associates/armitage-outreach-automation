@@ -377,3 +377,55 @@ The refresh token expires after 90 days of inactivity. Since the FTE scrape runs
 ### LinkedIn slug sources
 
 Slugs were resolved via Firmable (729 companies) and BrightData SERP fallback (134 companies), then filtered with name-similarity matching (threshold 0.35) to exclude false positives. 23 companies have no LinkedIn presence (mostly solo practices). 57 suspicious matches were excluded.
+
+## Salesforce Connection & Access
+
+There are **two independent ways** to reach the Salesforce org. They authenticate as different users and are used in different places — don't conflate them.
+
+### 1. Client-credentials OAuth (used by CI and this repo's scripts)
+
+`salesforce.py` authenticates with the OAuth **client-credentials** flow via three env vars: `SALESFORCE_DOMAIN`, `CONSUMER_KEY`, `CONSUMER_SECRET`. Connected user is Arlen Cram (Admin profile). This is what every script and GitHub Actions workflow uses. Helpers: `get_access_token()`, `sf_get()`, `sf_patch()`.
+
+- **In CI:** the three values are GitHub Actions secrets — connection works there.
+- **In Claude Code on the web (remote sessions):** the container is ephemeral and starts with **no** Salesforce credentials, and no `.env` (only `.env.sample`). To enable live queries from a web session, add `SALESFORCE_DOMAIN`, `CONSUMER_KEY`, `CONSUMER_SECRET` as **environment secrets in the web environment settings**. A `SessionStart` hook (`.claude/hooks/session-start.sh`, registered in `.claude/settings.json`) installs `requirements.txt` and runs `salesforce/verify_connection.py`, which prints `[OK]` / `[FAIL]` / `[SKIP]`. Run it manually any time: `python salesforce/verify_connection.py`.
+
+### 2. Salesforce CLI (Arlen's local Windows machine)
+
+Arlen's Windows box has Node v24 + `@salesforce/cli` installed globally, with the org authenticated as `arlen.cram@armitage.com.au`. Live queries there run via PowerShell:
+
+```powershell
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User"); sf data query --query "YOUR SOQL HERE" --target-org arlen.cram@armitage.com.au --json
+```
+
+This is **local only** — remote Claude sessions cannot reach it (no `sf` CLI in the container, and the org auth lives in the local machine's credential store). For ad-hoc exploration Arlen runs SOQL here and pastes results back.
+
+### Org schema — Account custom fields
+
+These live on the **Account** object (distinct from the similarly-named Opportunity fields below):
+
+| Field API name | Meaning | Notes |
+|---|---|---|
+| `fid18__c` | Revenue estimate | Nominally $m, but **inconsistent** — some records store raw dollars. Use judgement. |
+| `fid20__c` | EBITDA estimate | $m |
+| `fid2__c` | Description | |
+| `fid4__c` | Industry | Standard `Industry` / `Type` fields are often unpopulated — use these custom fields. |
+| `fid48__c` | Status | Picklist e.g. `6. Killed`, `5. Bolt-on`, `3. Pre conversation` |
+| `fid12__c` | Armitage partner | |
+
+### ⚠️ Account vs Opportunity field-name collisions
+
+Two API suffixes exist on **both** objects with **different** meanings — always confirm which object you're querying:
+
+| Suffix | On Account | On Opportunity |
+|---|---|---|
+| `fid48__c` | **Status** (`6. Killed`, `5. Bolt-on`, `3. Pre conversation`) | **Status reached for dead deals** (`Introduction pending`, `Did not connect`, `Term sheet`, …) |
+| `fid12__c` | **Armitage partner** | **Direct Source** (drives "Armitage network" pie classification) |
+
+### Opportunity: GOWT priority picklist
+
+`GOWT_Priority__c` on Opportunity now has **four** values: `Ultra High`, `High`, `Medium`, `Low`. (Earlier notes in this file mention only High/Medium/Low — `Ultra High` is the newer top tier.)
+
+### Other notes
+
+- **Event `Description`** (Activity/Event object) is the primary source of call notes and deal intel.
+- Standard Account fields (`Industry`, `Type`) are frequently blank; prefer the `fid*__c` custom fields.

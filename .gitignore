@@ -6,5 +6,8 @@ data/*
 !data/fte_company_linkedin_map.csv
 __pycache__/
 data/dump/*
-.claude
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+.claude/settings.local.json
 cron.log
