@@ -464,3 +464,41 @@ WHERE (Owner__c = 'X' OR fid53__c = 'X')
 
 - **Event `Description`** (Activity/Event object) is the primary source of call notes and deal intel.
 - Standard Account fields (`Industry`, `Type`) are frequently blank; prefer the `fid*__c` custom fields.
+
+## ⭐ Salesforce Opportunity Analysis — Minimum Standard (ALWAYS apply)
+
+Any time we "dig into Salesforce" on opportunities (thematic pulls, owner cuts, pipeline slices), this is the **minimum** rigour. More focus may be required, but never less.
+
+### 1. Always-on exclusions
+
+- **Bolt-ons — exclude.** An opportunity is a bolt-on (and is excluded) if **`fid40__c` ("Bolt-on for") is populated** (any non-blank value — note `"0"` is a junk placeholder the user still treats as populated → excluded). Also treat as bolt-on: `Transaction_type__c = '8. Portfolio company bolt-on'` and `fid10__c` (Source type) containing `Direct (bolt-on)`. Primary rule = **`fid40__c` populated → exclude**.
+- **Owner filters** follow the owner-category convention above (`Owner__c` / `fid53__c`, not `OwnerId`; drop non-target bolt-on owners).
+
+### 2. Deal-status buckets (standard columns)
+
+Report counts in these three buckets + Total:
+
+| Bucket | StageName |
+|---|---|
+| **Completed** | `0. Complete` |
+| **GOWT+** (live) | anything NOT killed and NOT complete — i.e. open stages `1.`–`6.` **plus** `8. Good opportunity wrong timing` |
+| **Killed** | `7. Killed` |
+
+### 3. Thematic membership = classify by description, not keywords
+
+Keyword bucketing alone is **not acceptable** (huge unclassified catch-all + false positives, e.g. `conveyor` catching industrial/mining belting, `calibration` catching medical devices, `"warehouse"` catching "Superannuation Warehouse"). Method:
+1. Build a **candidate pool** by Industry (`fid8__c`) + End-market (`fid9__c`) keyword match (broad recall).
+2. **Classify each candidate by reading its `Description` / company overview** (fan out subagents for scale) into the thematic's niches, or mark `NOT_IN_THEMATIC`. The thematic scope is the **technology / automation / robotics / software / accreditation-compliance / distribution / finance layer** around the sector — NOT the core operators themselves (e.g. for logistics, exclude pure freight carriers/couriers/3PL/warehousing operators).
+3. Watch for junk placeholders (`"0"`), keyword false positives, and Account-vs-Opportunity `fid` collisions.
+
+### 4. Presentation format (Armitage business-model framework)
+
+Group results by the **fixed** Armitage business-model classifications (these do NOT change), with the **Category = the thematic's niche** (these DO change per thematic):
+
+`Business model | Category (niche) | Completed | GOWT+ | Killed | Total` + a Totals row.
+
+The seven fixed business models: **Vertically Focused SaaS · B2B Outsourced Services · Distribution / Wholesale Trade · Finance · Hire/Rental · Niche Manufacturing · B2C Non-Discretionary** (plus an "Other (in-thematic)" catch for genuine-but-unlisted niches). Order thesis-carrying models first. Keep empty niches visible (show `0`). Niche→business-model mapping comes from the thematic paper (see the `thematic-paper` skill's Combined Niche Map & Target Table).
+
+### 5. Data hygiene
+
+Counts are **live** and drift a few records between queries (production org edited in real time) — say so. Always report what was excluded (bolt-ons, out-of-thematic, false positives) rather than silently dropping it.
