@@ -434,6 +434,32 @@ Two API suffixes exist on **both** objects with **different** meanings — alway
 
 `GOWT_Priority__c` on Opportunity now has **four** values: `Ultra High`, `High`, `Medium`, `Low`. (Earlier notes in this file mention only High/Medium/Low — `Ultra High` is the newer top tier.)
 
+### ⭐ Opportunity: "Owner" query convention (ALWAYS apply)
+
+When a user asks to filter/analyse Opportunities **by owner** (e.g. "opportunities where MY is the owner"), they mean the **owner *category*** — the initials-code picklists — **NOT** the Salesforce record owner (`OwnerId` / the User). The record owner (e.g. the User "Michelle Ye") covers a different, much larger population and will give the wrong answer.
+
+**Owner-category fields** (initials codes: `MDA, DG, BO, APC, NL, MQ, LF, AP, Mark H, MY, HM, WM, MC, ES`):
+
+| Field | Label | Scope |
+|---|---|---|
+| `Owner__c` | Owner | General owner category |
+| `fid53__c` | GOWT Owner | GOWT-specific owner |
+
+**Canonical rule for "owner = X":**
+1. Match on the owner-category picklist(s): `(Owner__c = 'X' OR fid53__c = 'X')` — include **both** fields unless the user scopes to one. They overlap only partially (a record can carry `X` in one, both, or neither).
+2. **Exclude records whose bolt-on owner is someone else.** `Bolt_on_Owner__c` (free-text string) holds a bolt-on owner code; if it's populated with a code **other than X**, exclude the record. Keep it if `Bolt_on_Owner__c` is blank **or** equals `X`:
+   `AND (Bolt_on_Owner__c = null OR Bolt_on_Owner__c = 'X')`
+
+Full canonical `WHERE` for owner `X`:
+```sql
+WHERE (Owner__c = 'X' OR fid53__c = 'X')
+  AND (Bolt_on_Owner__c = null OR Bolt_on_Owner__c = 'X')
+```
+
+**Gotchas:**
+- `Bolt_on_Owner__c` is free text and its codes don't always match the picklist spelling — e.g. picklists use `Mark H` (with space) but the bolt-on field stores `MarkH` (no space). It also holds compound values like `CW / MQ`, `MarkH / SteveJ` — any populated non-`X` value is excluded by the rule above (correct: "a bolt-on owner that is not X").
+- Empirically the `MY` owner-category population is almost entirely `7. Killed` (plus a few `0. Complete`) with **no** live/open pipeline and **no** `8. Good opportunity wrong timing`; those live/GOWT deals sit under the *record owner* Michelle Ye instead. Expect the same pattern for other owners — the category codes skew heavily to closed/dead deals.
+
 ### Other notes
 
 - **Event `Description`** (Activity/Event object) is the primary source of call notes and deal intel.
