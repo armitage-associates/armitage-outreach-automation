@@ -387,7 +387,16 @@ There are **two independent ways** to reach the Salesforce org. They authenticat
 `salesforce.py` authenticates with the OAuth **client-credentials** flow via three env vars: `SALESFORCE_DOMAIN`, `CONSUMER_KEY`, `CONSUMER_SECRET`. Connected user is Arlen Cram (Admin profile). This is what every script and GitHub Actions workflow uses. Helpers: `get_access_token()`, `sf_get()`, `sf_patch()`.
 
 - **In CI:** the three values are GitHub Actions secrets — connection works there.
-- **In Claude Code on the web (remote sessions):** the container is ephemeral and starts with **no** Salesforce credentials, and no `.env` (only `.env.sample`). To enable live queries from a web session, add `SALESFORCE_DOMAIN`, `CONSUMER_KEY`, `CONSUMER_SECRET` as **environment secrets in the web environment settings**. A `SessionStart` hook (`.claude/hooks/session-start.sh`, registered in `.claude/settings.json`) installs `requirements.txt` and runs `salesforce/verify_connection.py`, which prints `[OK]` / `[FAIL]` / `[SKIP]`. Run it manually any time: `python salesforce/verify_connection.py`.
+- **In Claude Code on the web (remote sessions):** the container is ephemeral and starts with **no** Salesforce credentials, and no `.env` (only `.env.sample`). Two things must be set on the **cloud environment** (claude.ai/code → environment settings) for live queries to work:
+  1. **Network access = Custom** with these **Allowed domains** (the default `Trusted` policy blocks Salesforce egress — the proxy returns `403 CONNECT` and no request reaches the org):
+     ```
+     *.my.salesforce.com
+     *.salesforce.com
+     ```
+     Keep **"Also include default list of common package managers"** checked, or the hook's `pip install` breaks.
+  2. **Environment variables:** `SALESFORCE_DOMAIN` (= `https://d0o0000015ssseai.my.salesforce.com`, the org's My Domain), `CONSUMER_KEY`, `CONSUMER_SECRET` (from the **Salesforce API 1** External Client App: Setup → External Client App Manager → Salesforce API 1 → Settings → OAuth → Consumer Key and Secret). ⚠️ Cloud environments have **no secrets store** — these sit in plaintext, readable by anyone who uses the environment. Rotate the secret if it's been exposed.
+
+  A `SessionStart` hook (`.claude/hooks/session-start.sh`, registered in `.claude/settings.json`) installs `requirements.txt` and runs `salesforce/verify_connection.py`, which prints `[OK]` / `[FAIL]` / `[SKIP]`. Run it manually any time: `python salesforce/verify_connection.py`.
 
 ### 2. Salesforce CLI (Arlen's local Windows machine)
 
