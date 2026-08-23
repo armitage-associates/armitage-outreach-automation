@@ -502,3 +502,10 @@ The seven fixed business models: **Vertically Focused SaaS · B2B Outsourced Ser
 ### 5. Data hygiene
 
 Counts are **live** and drift a few records between queries (production org edited in real time) — say so. Always report what was excluded (bolt-ons, out-of-thematic, false positives) rather than silently dropping it.
+
+### Killing an opportunity (write convention)
+
+When moving any Opportunity to `7. Killed`:
+1. **Always ask the user for the "Status reached for dead deals" (`fid48__c`)** — never infer or guess it. A validation rule ("When Killed or GOWT, status reached for dead deals must be selected") rejects the update otherwise. Values: `Introduction pending`, `Did not connect`, `Immediate kill`, `Initial discussions`, `Initial DD`, `Indicative offer`, `Term sheet`. (Deals already at Killed/GOWT usually have it set; deals coming from an open stage do not — so it must be supplied.)
+2. Set the **kill reason (`fid45__c`)** to the user-specified value (exact picklist match).
+3. **Clear `GOWT_Priority__c`** on kill (established with Vapar) unless the user says otherwise.
