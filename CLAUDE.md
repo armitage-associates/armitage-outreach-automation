@@ -506,6 +506,14 @@ Counts are **live** and drift a few records between queries (production org edit
 ### Killing an opportunity (write convention)
 
 When moving any Opportunity to `7. Killed`:
-1. **Always ask the user for the "Status reached for dead deals" (`fid48__c`)** — never infer or guess it. A validation rule ("When Killed or GOWT, status reached for dead deals must be selected") rejects the update otherwise. Values: `Introduction pending`, `Did not connect`, `Immediate kill`, `Initial discussions`, `Initial DD`, `Indicative offer`, `Term sheet`. (Deals already at Killed/GOWT usually have it set; deals coming from an open stage do not — so it must be supplied.)
-2. Set the **kill reason (`fid45__c`)** to the user-specified value (exact picklist match).
-3. **Clear `GOWT_Priority__c`** on kill (established with Vapar) unless the user says otherwise.
+1. **Set all THREE status fields together** (a kill must be reflected in each, not just Stage):
+   | Concept | API field | Value on kill |
+   |---|---|---|
+   | **Stage** | `StageName` | `7. Killed` |
+   | **Status** | `fidprocessstatus__c` | `7. Killed` |
+   | **Deal pipeline** | `Deal__c` | `20. Killed` |
+2. **Always ask the user for the "Status reached for dead deals" (`fid48__c`)** — never infer or guess it. A validation rule ("When Killed or GOWT, status reached for dead deals must be selected") rejects the update otherwise. Values: `Introduction pending`, `Did not connect`, `Immediate kill`, `Initial discussions`, `Initial DD`, `Indicative offer`, `Term sheet`. (Deals already at Killed/GOWT usually have it set — keep the existing value; deals coming from an open stage do not — so it must be supplied.)
+3. Set the **kill reason (`fid45__c`)** to the user-specified value (exact picklist match).
+4. **Clear `GOWT_Priority__c`** on kill (established with Vapar) unless the user says otherwise.
+
+(The `Deal__c` "Deal Pipeline" picklist runs `1. Closed` … `18. Origination`, `19. GOWT`, `20. Killed`; `fidprocessstatus__c` "Status" mirrors the Stage picklist.)
