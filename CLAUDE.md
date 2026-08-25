@@ -517,3 +517,19 @@ When moving any Opportunity to `7. Killed`:
 4. **Clear `GOWT_Priority__c`** on kill (established with Vapar) unless the user says otherwise.
 
 (The `Deal__c` "Deal Pipeline" picklist runs `1. Closed` … `18. Origination`, `19. GOWT`, `20. Killed`; `fidprocessstatus__c` "Status" mirrors the Stage picklist.)
+
+### Dynamic origination funnel report (built Aug 2026)
+
+Two coexisting artefacts for the origination funnel (native SF reporting can't render the cumulative-waterfall funnel *as a chart* while also being date-dynamic, so we keep both):
+
+1. **Origination Funnel Chart** (`00OOl000005y6HNMAY`) — the tapered funnel *picture*, on the Origination Charts / Origination weekly dashboards. Precomputed all-time via `sf_funnel_update.py` → `Funnel_Metric__c`. **Static** (not period-selectable).
+2. **Origination Funnel (Dynamic)** (`00OOl000006wAy1MAE`, shared folder) — a **tabular** Opportunity report whose grand-total row = the cumulative funnel, **recomputes for any Created Date range**, and drills to the underlying deals. No tapered chart (grand-total columns instead).
+
+The dynamic report is powered by 8 formula fields on Opportunity (replicate the same `fid48__c`/StageName waterfall):
+
+| Field | Meaning |
+|---|---|
+| `Funnel_Stage_Reached__c` | Ordinal 1–7 of the deepest funnel stage the deal reached (0 = not in funnel population). 7 = `0. Complete`; dead deals mapped from `fid48__c` (Did not connect→1, Introduction pending/Immediate kill→2, Initial discussions→3, Initial DD→4, Indicative offer→5, Term sheet→6). |
+| `Funnel_R1_Contacted__c` … `Funnel_R7_Investments__c` | Each = `IF(Funnel_Stage_Reached__c >= N, 1, 0)`. SUM of each = the cumulative funnel value at that stage. |
+
+FLS: read granted to the **System Administrator** profile's permission set. Other profiles (e.g. the report/dashboard running user) need read FLS on these 8 fields before they can run the dynamic report. Fields created via Tooling API `CustomField`; report via `analytics/reports`.
