@@ -377,3 +377,159 @@ The refresh token expires after 90 days of inactivity. Since the FTE scrape runs
 ### LinkedIn slug sources
 
 Slugs were resolved via Firmable (729 companies) and BrightData SERP fallback (134 companies), then filtered with name-similarity matching (threshold 0.35) to exclude false positives. 23 companies have no LinkedIn presence (mostly solo practices). 57 suspicious matches were excluded.
+
+## Salesforce Connection & Access
+
+There are **two independent ways** to reach the Salesforce org. They authenticate as different users and are used in different places — don't conflate them.
+
+### 1. Client-credentials OAuth (used by CI and this repo's scripts)
+
+`salesforce.py` authenticates with the OAuth **client-credentials** flow via three env vars: `SALESFORCE_DOMAIN`, `CONSUMER_KEY`, `CONSUMER_SECRET`. Connected user is Arlen Cram (Admin profile). This is what every script and GitHub Actions workflow uses. Helpers: `get_access_token()`, `sf_get()`, `sf_patch()`.
+
+- **In CI:** the three values are GitHub Actions secrets — connection works there.
+- **In Claude Code on the web (remote sessions):** the container is ephemeral and starts with **no** Salesforce credentials, and no `.env` (only `.env.sample`). Two things must be set on the **cloud environment** (claude.ai/code → environment settings) for live queries to work:
+  1. **Network access = Custom** with these **Allowed domains** (the default `Trusted` policy blocks Salesforce egress — the proxy returns `403 CONNECT` and no request reaches the org):
+     ```
+     *.my.salesforce.com
+     *.salesforce.com
+     ```
+     Keep **"Also include default list of common package managers"** checked, or the hook's `pip install` breaks.
+  2. **Environment variables:** `SALESFORCE_DOMAIN` (= `https://d0o0000015ssseai.my.salesforce.com`, the org's My Domain), `CONSUMER_KEY`, `CONSUMER_SECRET` (from the **Salesforce API 1** External Client App: Setup → External Client App Manager → Salesforce API 1 → Settings → OAuth → Consumer Key and Secret). ⚠️ Cloud environments have **no secrets store** — these sit in plaintext, readable by anyone who uses the environment. Rotate the secret if it's been exposed.
+
+  A `SessionStart` hook (`.claude/hooks/session-start.sh`, registered in `.claude/settings.json`) installs `requirements.txt` and runs `salesforce/verify_connection.py`, which prints `[OK]` / `[FAIL]` / `[SKIP]`. Run it manually any time: `python salesforce/verify_connection.py`.
+
+### 2. Salesforce CLI (Arlen's local Windows machine)
+
+Arlen's Windows box has Node v24 + `@salesforce/cli` installed globally, with the org authenticated as `arlen.cram@armitage.com.au`. Live queries there run via PowerShell:
+
+```powershell
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User"); sf data query --query "YOUR SOQL HERE" --target-org arlen.cram@armitage.com.au --json
+```
+
+This is **local only** — remote Claude sessions cannot reach it (no `sf` CLI in the container, and the org auth lives in the local machine's credential store). For ad-hoc exploration Arlen runs SOQL here and pastes results back.
+
+### Org schema — Account custom fields
+
+These live on the **Account** object (distinct from the similarly-named Opportunity fields below):
+
+| Field API name | Meaning | Notes |
+|---|---|---|
+| `fid18__c` | Revenue estimate | Nominally $m, but **inconsistent** — some records store raw dollars. Use judgement. |
+| `fid20__c` | EBITDA estimate | $m |
+| `fid2__c` | Description | |
+| `fid4__c` | Industry | Standard `Industry` / `Type` fields are often unpopulated — use these custom fields. |
+| `fid48__c` | Status | Picklist e.g. `6. Killed`, `5. Bolt-on`, `3. Pre conversation` |
+| `fid12__c` | Armitage partner | |
+
+### ⚠️ Account vs Opportunity field-name collisions
+
+Two API suffixes exist on **both** objects with **different** meanings — always confirm which object you're querying:
+
+| Suffix | On Account | On Opportunity |
+|---|---|---|
+| `fid48__c` | **Status** (`6. Killed`, `5. Bolt-on`, `3. Pre conversation`) | **Status reached for dead deals** (`Introduction pending`, `Did not connect`, `Term sheet`, …) |
+| `fid12__c` | **Armitage partner** | **Direct Source** (drives "Armitage network" pie classification) |
+
+### Opportunity: GOWT priority picklist
+
+`GOWT_Priority__c` on Opportunity now has **four** values: `Ultra High`, `High`, `Medium`, `Low`. (Earlier notes in this file mention only High/Medium/Low — `Ultra High` is the newer top tier.)
+
+### ⭐ Opportunity: "Owner" query convention (ALWAYS apply)
+
+When a user asks to filter/analyse Opportunities **by owner** (e.g. "opportunities where MY is the owner"), they mean the **owner *category*** — the initials-code picklists — **NOT** the Salesforce record owner (`OwnerId` / the User). The record owner (e.g. the User "Michelle Ye") covers a different, much larger population and will give the wrong answer.
+
+**Owner-category fields** (initials codes: `MDA, DG, BO, APC, NL, MQ, LF, AP, Mark H, MY, HM, WM, MC, ES`):
+
+| Field | Label | Scope |
+|---|---|---|
+| `Owner__c` | Owner | General owner category |
+| `fid53__c` | GOWT Owner | GOWT-specific owner |
+
+**Canonical rule for "owner = X":**
+1. Match on the owner-category picklist(s): `(Owner__c = 'X' OR fid53__c = 'X')` — include **both** fields unless the user scopes to one. They overlap only partially (a record can carry `X` in one, both, or neither).
+2. **Exclude records whose bolt-on owner is someone else.** `Bolt_on_Owner__c` (free-text string) holds a bolt-on owner code; if it's populated with a code **other than X**, exclude the record. Keep it if `Bolt_on_Owner__c` is blank **or** equals `X`:
+   `AND (Bolt_on_Owner__c = null OR Bolt_on_Owner__c = 'X')`
+
+Full canonical `WHERE` for owner `X`:
+```sql
+WHERE (Owner__c = 'X' OR fid53__c = 'X')
+  AND (Bolt_on_Owner__c = null OR Bolt_on_Owner__c = 'X')
+```
+
+**Gotchas:**
+- `Bolt_on_Owner__c` is free text and its codes don't always match the picklist spelling — e.g. picklists use `Mark H` (with space) but the bolt-on field stores `MarkH` (no space). It also holds compound values like `CW / MQ`, `MarkH / SteveJ` — any populated non-`X` value is excluded by the rule above (correct: "a bolt-on owner that is not X").
+- Empirically the `MY` owner-category population is almost entirely `7. Killed` (plus a few `0. Complete`) with **no** live/open pipeline and **no** `8. Good opportunity wrong timing`; those live/GOWT deals sit under the *record owner* Michelle Ye instead. Expect the same pattern for other owners — the category codes skew heavily to closed/dead deals.
+
+### Other notes
+
+- **Event `Description`** (Activity/Event object) is the primary source of call notes and deal intel.
+- Standard Account fields (`Industry`, `Type`) are frequently blank; prefer the `fid*__c` custom fields.
+
+## ⭐ Salesforce Opportunity Analysis — Minimum Standard (ALWAYS apply)
+
+Any time we "dig into Salesforce" on opportunities (thematic pulls, owner cuts, pipeline slices), this is the **minimum** rigour. More focus may be required, but never less.
+
+### 1. Always-on exclusions
+
+- **Bolt-ons — exclude.** An opportunity is a bolt-on (and is excluded) if **`fid40__c` ("Bolt-on for") is populated** (any non-blank value — note `"0"` is a junk placeholder the user still treats as populated → excluded). Also treat as bolt-on: `Transaction_type__c = '8. Portfolio company bolt-on'` and `fid10__c` (Source type) containing `Direct (bolt-on)`. Primary rule = **`fid40__c` populated → exclude**.
+- **Owner filters** follow the owner-category convention above (`Owner__c` / `fid53__c`, not `OwnerId`; drop non-target bolt-on owners).
+
+### 2. Deal-status buckets (standard columns)
+
+Report counts in these three buckets + Total:
+
+| Bucket | StageName |
+|---|---|
+| **Completed** | `0. Complete` |
+| **GOWT+** (live) | anything NOT killed and NOT complete — i.e. open stages `1.`–`6.` **plus** `8. Good opportunity wrong timing` |
+| **Killed** | `7. Killed` |
+
+### 3. Thematic membership = classify by description, not keywords
+
+Keyword bucketing alone is **not acceptable** (huge unclassified catch-all + false positives, e.g. `conveyor` catching industrial/mining belting, `calibration` catching medical devices, `"warehouse"` catching "Superannuation Warehouse"). Method:
+1. Build a **candidate pool** by Industry (`fid8__c`) + End-market (`fid9__c`) keyword match (broad recall).
+2. **Classify each candidate by reading its `Description` / company overview** (fan out subagents for scale) into the thematic's niches, or mark `NOT_IN_THEMATIC`. The thematic scope is the **technology / automation / robotics / software / accreditation-compliance / distribution / finance layer** around the sector — NOT the core operators themselves (e.g. for logistics, exclude pure freight carriers/couriers/3PL/warehousing operators).
+3. Watch for junk placeholders (`"0"`), keyword false positives, and Account-vs-Opportunity `fid` collisions.
+
+### 4. Presentation format (Armitage business-model framework)
+
+Group results by the **fixed** Armitage business-model classifications (these do NOT change), with the **Category = the thematic's niche** (these DO change per thematic):
+
+`Business model | Category (niche) | Completed | GOWT+ | Killed | Total` + a Totals row.
+
+The seven fixed business models: **Vertically Focused SaaS · B2B Outsourced Services · Distribution / Wholesale Trade · Finance · Hire/Rental · Niche Manufacturing · B2C Non-Discretionary** (plus an "Other (in-thematic)" catch for genuine-but-unlisted niches). Order thesis-carrying models first. Keep empty niches visible (show `0`). Niche→business-model mapping comes from the thematic paper (see the `thematic-paper` skill's Combined Niche Map & Target Table).
+
+### 5. Data hygiene
+
+Counts are **live** and drift a few records between queries (production org edited in real time) — say so. Always report what was excluded (bolt-ons, out-of-thematic, false positives) rather than silently dropping it.
+
+### Killing an opportunity (write convention)
+
+When moving any Opportunity to `7. Killed`:
+1. **Set all THREE status fields together** (a kill must be reflected in each, not just Stage):
+   | Concept | API field | Value on kill |
+   |---|---|---|
+   | **Stage** | `StageName` | `7. Killed` |
+   | **Status** | `fidprocessstatus__c` | `7. Killed` |
+   | **Deal pipeline** | `Deal__c` | `20. Killed` |
+2. **Always ask the user for the "Status reached for dead deals" (`fid48__c`)** — never infer or guess it. A validation rule ("When Killed or GOWT, status reached for dead deals must be selected") rejects the update otherwise. Values: `Introduction pending`, `Did not connect`, `Immediate kill`, `Initial discussions`, `Initial DD`, `Indicative offer`, `Term sheet`. (Deals already at Killed/GOWT usually have it set — keep the existing value; deals coming from an open stage do not — so it must be supplied.)
+3. Set the **kill reason (`fid45__c`)** to the user-specified value (exact picklist match).
+4. **Clear `GOWT_Priority__c`** on kill (established with Vapar) unless the user says otherwise.
+
+(The `Deal__c` "Deal Pipeline" picklist runs `1. Closed` … `18. Origination`, `19. GOWT`, `20. Killed`; `fidprocessstatus__c` "Status" mirrors the Stage picklist.)
+
+### Dynamic origination funnel report (built Aug 2026)
+
+Two coexisting artefacts for the origination funnel (native SF reporting can't render the cumulative-waterfall funnel *as a chart* while also being date-dynamic, so we keep both):
+
+1. **Origination Funnel Chart** (`00OOl000005y6HNMAY`) — the tapered funnel *picture*, on the Origination Charts / Origination weekly dashboards. Precomputed all-time via `sf_funnel_update.py` → `Funnel_Metric__c`. **Static** (not period-selectable).
+2. **Origination Funnel (Dynamic)** (`00OOl000006wAy1MAE`, shared folder) — a **tabular** Opportunity report whose grand-total row = the cumulative funnel, **recomputes for any Created Date range**, and drills to the underlying deals. No tapered chart (grand-total columns instead).
+
+The dynamic report is powered by 8 formula fields on Opportunity (replicate the same `fid48__c`/StageName waterfall):
+
+| Field | Meaning |
+|---|---|
+| `Funnel_Stage_Reached__c` | Ordinal 1–7 of the deepest funnel stage the deal reached (0 = not in funnel population). 7 = `0. Complete`; dead deals mapped from `fid48__c` (Did not connect→1, Introduction pending/Immediate kill→2, Initial discussions→3, Initial DD→4, Indicative offer→5, Term sheet→6). |
+| `Funnel_R1_Contacted__c` … `Funnel_R7_Investments__c` | Each = `IF(Funnel_Stage_Reached__c >= N, 1, 0)`. SUM of each = the cumulative funnel value at that stage. |
+
+FLS: read granted to the **System Administrator** profile's permission set. Other profiles (e.g. the report/dashboard running user) need read FLS on these 8 fields before they can run the dynamic report. Fields created via Tooling API `CustomField`; report via `analytics/reports`.
