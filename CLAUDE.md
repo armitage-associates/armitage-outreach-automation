@@ -377,3 +377,84 @@ The refresh token expires after 90 days of inactivity. Since the FTE scrape runs
 ### LinkedIn slug sources
 
 Slugs were resolved via Firmable (729 companies) and BrightData SERP fallback (134 companies), then filtered with name-similarity matching (threshold 0.35) to exclude false positives. 23 companies have no LinkedIn presence (mostly solo practices). 57 suspicious matches were excluded.
+
+## Armitage format (investor deck house style)
+
+Reference: `Armitage_Associates_Overview_Oct26_v30.pptx` (46 slides, investor overview, October 2026). Use this as the template whenever asked to build or edit an Armitage deck, one-pager or investor material. Derived from the file itself (theme, master and slide XML), not from a brand guide, so treat exact values as observed rather than official.
+
+### Page and typography
+
+| Item | Observed value |
+|---|---|
+| Slide size | 4:3, 10 x 7.5 in (9144000 x 6858000 EMU) |
+| Font | Calibri throughout (theme major and minor) |
+| Slide title | 20pt bold, navy `1F497D`, top-left, sits right of the section letter circle |
+| Strapline (key message under title) | 14pt bold, mid-blue `4F81BD`, between two dotted rules |
+| Body | 10 to 11pt black; bullets are "•", sub-bullets "–" |
+| Bullet lead-ins | Bold blue label, then colon, then text (e.g. "Strategy: Five-year business plan") |
+| Footnotes and sources | 9pt, grey, bottom of slide, above the logo line |
+| Logo | Armitage Associates logo bottom-left on every content slide; page number bottom-right |
+| Top edge | Thin blue banded bar on every content slide (from the master) |
+
+### Colours (explicit RGB used on slides)
+
+| Use | Hex |
+|---|---|
+| Titles, table header fill, headings | `1F497D` navy |
+| Badge text, section letter circle | `385D8A` |
+| Section header bars, accents, chart bars | `4F81BD` |
+| Table row tints | `DCE6F2`, `F2F5FA`; panels `F2F2F2` |
+| Secondary text, dividers | `595959`, `7F7F7F`, `A6A6A6` |
+| KPI numbers (highlight strip) | `C8922A` gold, 15pt bold, with 10pt navy labels |
+
+The theme palette itself is the default Office one, so always set colours explicitly.
+
+### Standard elements on every content slide
+
+1. **Confidential badge**, top-right: rounded rectangle, 12pt bold `385D8A`, text "Confidential – not for distribution".
+2. **Section letter circle** (A to E) at top-left, matching the five numbered headline claims on the "Armitage highlights" slide. A = track record, B = team and Board, C = strategy and market, D = origination, E = active ownership and value creation. Appendix and disclaimer slides carry no letter.
+3. **Action title**: a full-sentence takeaway ("14 of 20 investee companies were sourced outside intermediated processes"), not a topic label.
+4. **Footnote line** stating basis: "Gross, as at 30 June 2026", "Sources: ...", "Counts as at 31 October 2026; percentages may not sum to 100% due to rounding".
+
+### Deck order (the "formula")
+
+1. Title (photo background, "Investor overview" plus month and year)
+2. Highlights: top KPI strip (funds, realised DPI / IRR / capital returned, one tile per fund), then five lettered claims A to E, closing banner with the fund raise
+3. Firm timeline and at-a-glance numbers
+4. Track record: fund returns table (gross and net DPI, TVPI, IRR), then the problem assets, with learnings
+5. B team, Board, network, portfolio operations
+6. C strategy, market, competitive set
+7. D origination funnel, platform, source of deals, screening stats
+8. E value creation levers, lever table per investment, lessons, three or more case studies
+9. Fund raise summary (target size, strategy, terms, timing)
+10. Appendix: asset-level performance tables, one case study per platform investment
+11. Disclaimer (AFSL holder, contact)
+
+### Slide patterns
+
+- **Highlight tiles**: small rounded rectangles, bold navy label, gold bold figures, navy sub-labels ("net TVPI | net IRR").
+- **Lettered claim rows**: left rounded blue block with the claim, right text block, dotted divider between rows.
+- **Section header bars**: rounded blue bars with white bold text ("Context", "Learnings from ...").
+- **Tables**: navy header (white bold) on left-hand label column, light-blue tint on content cells; multiples as "2.5x", percentages as "19%", currency as "A$mn".
+- **Case study page**: two-line title ("Active ownership driving returns" / "AAF3 case study: Name"), company logo top-right, outcome badge ("AAF3 unrealised investment: 3.3x TVPI*"), five-row table (Company overview; Partners / year of investment; Investment thesis; Founder needs; Example value creation initiatives), then bottom-left bar chart "Revenue growth" with a "+x% CAGR" arrow and bottom-right "Armitage network" bullets. Footnote "* Gross, as at 30 June 2026".
+- **Problem-asset page** (Wastech, Outline Global): same table but rows are Company overview; Fund / year of investment; Investment thesis; What went wrong; Action taken, plus Key milestones timeline and Learnings embedded.
+
+### Writing conventions
+
+- British spelling ("realisation", "organisation", "programmatic"). One slip in v30: "coverage program" on slide 16 should be "programme".
+- Currency "A$10–40mn", "A$4.8tn"; ranges use an en-dash; approximations "c.76%"; multiples "3.1x"; fiscal years "FY26", calendar "CY2027".
+- Always state basis and date: gross or net, "as at 30 June 2026", count dates "as at 31 October 2026".
+- Fund names: AAF1 to AAF5; continuation vehicle "CV1"; platform investments (20) versus bolt-on acquisitions (52) are counted separately.
+- Forward-looking statements are marked (^ footnote) and say that exit timing and outcome are not assured.
+- No em-dashes in new text (the deck uses spaced en-dashes).
+
+### Pre-issue checks learned from reviewing v30
+
+Run these before any deck leaves the building:
+
+1. Search every slide for draft markers: "MDA to", "Board to review", "To review which", square brackets, `[A$Xmn]`.
+2. Reconcile headline numbers to the appendix tables (fund totals, invested capital, DPI / TVPI, committed capital, counts of 20 platforms and 52 bolt-ons).
+3. Recompute each "+x% CAGR" from the charted revenue and compare to the lever table; use the same start year as the chart.
+4. Check the as-at date is the same wherever a number is quoted (30 June 2026 returns versus October 2026 events).
+5. Check every internal "refer slide N" after any slide is added or removed.
+6. Have compliance review forward-looking statements, target returns and any "no capital lost" claims before external release.
